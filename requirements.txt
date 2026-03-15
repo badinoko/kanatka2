@@ -12,6 +12,7 @@ opencv-contrib-python==4.13.0.92
 pillow==10.4.0
 pycparser==3.0
 pyparsing==3.3.2
+pywebview==6.1
 python-dateutil==2.9.0.post0
 six==1.17.0
 sounddevice==0.5.5
