@@ -3,9 +3,12 @@ from __future__ import annotations
 from PIL import Image, ImageDraw, ImageFont
 
 DEBUG_COLUMNS = (
-    ("person_present", "Человек"),
-    ("sharpness", "Резкость"),
-    ("exposure", "Свет"),
+    ("head_readability", "Лицо"),
+    ("head_pose", "Ракурс"),
+    ("head_sharpness", "Резкость"),
+    ("head_exposure", "Свет"),
+    ("readable_count", "Людей"),
+    ("frame_quality", "Кадр"),
 )
 
 
@@ -97,12 +100,15 @@ def add_score_table(
     for index, (key, label) in enumerate(DEBUG_COLUMNS):
         x1 = margin + index * column_width
         x2 = x1 + column_width
+        raw_value = score_breakdown.get(key, 0.0)
+        numeric_value = float(raw_value) if isinstance(raw_value, (int, float)) else 0.0
+        weight_value = float(weights.get(key, 0.0))
         draw_table_cell(
             draw,
             (x1, top_y, x2, panel_height - margin),
             label,
-            f"n {float(score_breakdown.get(key, 0.0)):.2f}",
-            f"+{float(score_breakdown.get(key, 0.0)) * float(weights.get(key, 0.0)):.1f}",
+            f"n {numeric_value:.2f}",
+            f"+{numeric_value * weight_value:.1f}",
             header_font,
             value_font,
             minor_font,
@@ -227,9 +233,9 @@ def fonts_fit(
 
     normal_samples = [
         "Резкость",
-        "Человек",
+        "Людей",
         "n 0.00",
-        "+40.0",
+        "+30.0",
     ]
     score_samples = [
         "Итог",

@@ -523,3 +523,37 @@
   - что читать;
   - какие допущения считать подтверждёнными;
   - в каком порядке реально идти по KAN-038 / KAN-039 / KAN-044 / KAN-045 / KAN-051.
+
+## 2026-03-15 (KAN-038 → KAN-039 → KAN-044 → KAN-045 → KAN-051 реализованы)
+
+- **KAN-038: Новая 3-слойная score-модель.**
+  - `src/scorer.py` полностью переписан: occupancy gate → quality gate → ranking score (7 компонентов, сумма 100).
+  - `src/analyzer.py` расширен: `detection_type`, `readable_face_count`, per-face `readability`.
+  - `src/config.json`: новые `scoring_weights` (7 ключей), 12 новых `thresholds`.
+  - `src/badge_utils.py`: 6 новых колонок overlay вместо 3.
+  - Fallback-кадры больше не побеждают face-кадры (потолок 45 vs ~60-70 у лиц).
+  - Тесты: `test_scorer_logic.py` (9), `test_presence_logic.py` (3), `test_badge_utils.py` обновлены.
+
+- **KAN-039: decision_state + ambiguous_manual_review.**
+  - `src/selector.py`: добавлена `_compute_decision_state()`, серии получают статус `auto_selected` / `ambiguous_manual_review`.
+  - `src/watcher.py`: `ambiguous_total` в summary.
+  - Новый тест-файл: `tests/test_decision_state.py` (6 тестов).
+
+- **KAN-044: Exception-flow без блокировки автопечати.**
+  - Ambiguous фото идут в `workdir/ambiguous/` вместо `selected/` → не попадают в sheet_composer.
+  - `src/config_utils.py`: `output_ambiguous` в runtime dirs.
+  - `src/series_browser.py`: фильтр "Спорные", кнопка "Подтвердить", API `/api/confirm-ambiguous`.
+
+- **KAN-045: Autoprint on/off.**
+  - `src/print_utils.py` (новый): `print_sheet()` через mspaint /p.
+  - `src/watcher.py`: `_autoprint_sheets()` после compose, блокировка в test_mode.
+  - `src/config.json`: секция `print` (autoprint, test_mode, printer_name).
+  - UI: чекбоксы в настройках, индикатор в навбаре.
+
+- **KAN-051: Test mode + sheets preview.**
+  - `/sheets` — галерея собранных листов с превью, зумом, ручной печатью.
+  - Навбар: "TEST MODE" жёлтым при test_mode=true.
+  - API `/api/print-sheet` — ручная печать одного листа (блокируется в test_mode).
+
+- Итого: 45 тестов, 11 файлов — все проходят.
+- Новые файлы: `src/print_utils.py`, `tests/test_decision_state.py`.

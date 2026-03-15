@@ -29,6 +29,28 @@ def analyze_photo(photo_path: str | Path, face_analyzer: MediaPipeFaceAnalyzer, 
         haar_config = config.get("haar_cascade", {})
         person_fallback = face_analyzer.detect_person(resized, min_confidence=min_person_conf, haar_config=haar_config)
 
+    # Determine detection type and compute per-face readability
+    if faces:
+        detection_type = "face"
+    elif person_fallback:
+        detection_type = "fallback"
+    else:
+        detection_type = "empty"
+
+    thresholds = config.get("thresholds", {})
+    readability_min_conf = thresholds.get("readability_min_confidence", 0.4)
+    readability_max_yaw = thresholds.get("readability_max_yaw", 55.0)
+    readability_max_pitch = thresholds.get("readability_max_pitch", 40.0)
+    readable_min_score = thresholds.get("readable_face_min_score", 0.3)
+
+    readable_face_count = 0
+    for face in faces:
+        face["readability"] = _compute_face_readability(
+            face, readability_min_conf, readability_max_yaw, readability_max_pitch,
+        )
+        if face["readability"] >= readable_min_score:
+            readable_face_count += 1
+
     metrics = {
         "file_name": Path(photo_path).name,
         "file_path": str(Path(photo_path).resolve()),
@@ -39,6 +61,8 @@ def analyze_photo(photo_path: str | Path, face_analyzer: MediaPipeFaceAnalyzer, 
         "faces": faces,
         "subject_present": len(faces) > 0 or person_fallback,
         "person_fallback": person_fallback,
+        "detection_type": detection_type,
+        "readable_face_count": readable_face_count,
         "overall_brightness": compute_brightness(resized),
         "overall_sharpness": compute_sharpness(resized),
         "timings": {
@@ -52,7 +76,10 @@ def analyze_photo(photo_path: str | Path, face_analyzer: MediaPipeFaceAnalyzer, 
         config["thresholds"],
     )
     metrics["score"] = round(score, 3)
-    metrics["score_breakdown"] = {key: round(value, 3) for key, value in parts.items()}
+    metrics["score_breakdown"] = {
+        key: round(value, 3) if isinstance(value, (int, float)) else value
+        for key, value in parts.items()
+    }
     metrics["timings"]["total_seconds"] = round(time.perf_counter() - start_time, 4)
 
     annotated = draw_annotations(resized.copy(), metrics, config["scoring_weights"])
@@ -95,3 +122,40 @@ def draw_annotations(image, metrics: dict, scoring_weights: dict):
         weights=scoring_weights,
     )
     return cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+
+
+def _compute_face_readability(
+    face: dict,
+    min_confidence: float = 0.4,
+    max_yaw: float = 55.0,
+    max_pitch: float = 40.0,
+) -> float:
+    """Aggregate readability score for a single face (0.0 – 1.0).
+
+    Combines confidence, head pose (yaw/pitch within readable range),
+    and local sharpness into a single number.
+    """
+    confidence = face.get("confidence", 0.0)
+    yaw = abs(face.get("yaw", 180.0))
+    pitch = abs(face.get("pitch", 180.0))
+    sharpness = face.get("sharpness", 0.0)
+
+    # Confidence component: 0 if below threshold, linear up to 1
+    if confidence < min_confidence:
+        conf_score = 0.0
+    else:
+        conf_score = min(1.0, (confidence - min_confidence) / max(0.01, 1.0 - min_confidence))
+
+    # Pose component: 1.0 for frontal, falling off toward max_yaw/max_pitch
+    if yaw >= max_yaw or pitch >= max_pitch:
+        pose_score = 0.0
+    else:
+        yaw_score = 1.0 - (yaw / max_yaw)
+        pitch_score = 1.0 - (pitch / max_pitch)
+        pose_score = min(yaw_score, pitch_score)
+
+    # Sharpness component: normalized 0..1 (30 = min, 180 = good)
+    sharp_score = max(0.0, min(1.0, (sharpness - 30.0) / 150.0))
+
+    # Weighted combination
+    return 0.40 * conf_score + 0.35 * pose_score + 0.25 * sharp_score

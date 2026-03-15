@@ -60,32 +60,30 @@
 | KAN-035 | DONE | Docs | Укрепление CLAUDE.md | Полная инвентаризация модулей |
 | KAN-036 | TODO | Infra | Публикация на GitHub | `badinoko/kanatka2` |
 | KAN-037 | TODO | Arch | Зафиксировать целевую схему компьютеров и режим поставки | Практически подтверждено, нужно дочистить код и docs |
-| KAN-038 | TODO | Scoring | Пересобрать score-модель поверх face-метрик | Главный следующий кодовый шаг |
-| KAN-039 | TODO | UX | Ввести режим ambiguous series вместо жёсткого авто-выбора | `delta_score` + manual review |
+| KAN-038 | DONE | Scoring | Пересобрать score-модель поверх face-метрик | 3-слойная модель: occupancy → quality → ranking (7 компонентов) |
+| KAN-039 | DONE | UX | Ввести режим ambiguous series вместо жёсткого авто-выбора | `decision_state` + `delta_score` + manual review |
 | KAN-040 | TODO | Ops | Спроектировать retention/cleanup и health-check сервис | Без рискованных побочных эффектов |
 | KAN-041 | TODO | Docs | Синхронизировать README и deploy-docs с фактической архитектурой | README отстаёт |
 | KAN-042 | TODO | Docs | Закрыть согласование продуктовой концепции с автором | Источник решений уже сведен в roadmap |
 | KAN-043 | DONE | Docs | Пройти с автором короткий checklist и собрать ответы | Ответы получены |
-| KAN-044 | TODO | UX | Спроектировать exception-flow для rescue без блокировки автопечати | Variant B подтверждён: `delta_score` настраивается, спорные серии полностью уходят из workflow и не задерживают листы |
-| KAN-045 | TODO | Print | Добавить переключаемый режим автопечати | `autoprint on/off` |
+| KAN-044 | DONE | UX | Exception-flow: rescue без блокировки автопечати | Ambiguous → `workdir/ambiguous/`, UI подтверждение, API confirm |
+| KAN-045 | DONE | Print | Добавить переключаемый режим автопечати | `autoprint on/off`, `print_utils.py`, UI toggle |
 | KAN-046 | TODO | Ops | Решить изоляцию cleanup-подсистемы | Variant C подтверждён: scheduled subprocess worker |
 | KAN-047 | TODO | Docs | Зафиксировать финальное решение по queue/autoprint/cleanup | После внешних уточнений |
 | KAN-048 | TODO | Docs | Утвердить design brief по новой score-модели | База: `kan-038-score-design-brief.md` |
 | KAN-049 | DONE | Docs | Подготовить startup prompt для новой сессии | Архивный артефакт |
 | KAN-050 | TODO | Workflow | Привести продукт к реальному полевому workflow заказчика | Автопечать по умолчанию, rescue как исключение |
-| KAN-051 | TODO | UX | Добавить test mode с эмуляцией печати и preview листов | Zoom + debug overlays без реальной печати |
+| KAN-051 | DONE | UX | Добавить test mode с эмуляцией печати и preview листов | `/sheets` галерея, zoom, ручная печать, TEST MODE индикатор |
 
 ## Current Priorities
 
-- KAN-038: переписать score так, чтобы пустое кресло и слабый fallback не побеждали читаемые кадры.
-- KAN-039: добавить статус `ambiguous_manual_review` вместо ложной уверенности автоматики.
-- KAN-044: спроектировать exception-flow для rescue без остановки основного потока.
-- KAN-045: ввести переключаемый `autoprint`.
-- KAN-050: довести продукт до реального полевого workflow заказчика.
-- KAN-051: сделать безопасный test mode с экранной эмуляцией печати.
+- KAN-050: довести продукт до реального полевого workflow заказчика (калибровка score на реальных данных).
+- KAN-040: спроектировать retention/cleanup и health-check.
+- KAN-041: синхронизировать README и deploy-docs.
+- KAN-033: deployment README для инженера.
 
 ## Current Problems
 
-- `score` слишком чувствителен к порогам и упрощён до 3 компонентов.
 - README и deployment-docs не синхронизированы с новым пониманием архитектуры.
-- Нужна чёткая грань между боевым автопотоком и инженерным режимом настройки/эмуляции.
+- Score-модель требует калибровки весов на реальных полевых данных.
+- Инсталляторы не пересобраны после масштабных изменений scorer/selector.

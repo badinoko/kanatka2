@@ -82,11 +82,11 @@
 
 ### Ключевые числа
 
-- Скоринг: 3 компонента — `person_present` (40), `sharpness` (35), `exposure` (25). Сумма = 100.
-- При этом код уже собирает дополнительные face-метрики: `yaw/pitch/roll`, `ear`, `mouth_ratio`, локальную sharpness/brightness лица.
+- Скоринг: 3-слойная модель (occupancy → quality gate → ranking). 7 компонентов ranking: `head_readability` (30), `head_pose` (15), `head_sharpness` (20), `head_exposure` (15), `readable_count` (10), `frame_quality` (8), `smile_bonus` (2). Сумма = 100.
+- Quality gate: pass/weak/fail. Fallback-кадры ограничены потолком 45.
 - Детекция: MediaPipe face → Haar upper body fallback.
 - Тестовый прогон: 22/25 серий selected (88%).
-- Тесты: 34 теста, 10 файлов.
+- Тесты: 45 тестов, 11 файлов.
 - Веб-интерфейс на порту 8787.
 
 ---
@@ -118,6 +118,7 @@ kanatka2/
 │   ├── image_utils.py     # Чтение/запись/ресайз изображений
 │   ├── export_utils.py    # ZIP-экспорт + сетевая синхронизация
 │   ├── config_utils.py    # Загрузка/сохранение config.json
+│   ├── print_utils.py     # Печать листов (Windows mspaint /p)
 │   ├── metadata_utils.py  # Пути к JSON-метаданным фото
 │   ├── logger_setup.py    # Настройка логирования
 │   └── runtime_env.py     # Подготовка окружения (MPLCONFIGDIR)
@@ -131,6 +132,7 @@ kanatka2/
 ├── tests/                 # Юнит-тесты (unittest)
 │   ├── test_app.py
 │   ├── test_badge_utils.py
+│   ├── test_decision_state.py
 │   ├── test_export_utils.py
 │   ├── test_presence_logic.py
 │   ├── test_receiver_server.py
@@ -331,7 +333,7 @@ kanatka2/
 
 - **Фреймворк:** unittest (pytest не установлен в .venv).
 - **Запуск:** `.venv/Scripts/python.exe -m unittest discover -s tests -p "test_*.py"`.
-- **24 теста, 7 файлов**, все проходят.
+- **45 тестов, 11 файлов**, все проходят.
 - **Важно:** системный Python не видит cv2 — тесты обязательно через `.venv`.
 
 ---

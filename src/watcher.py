@@ -10,6 +10,7 @@ from watchdog.observers import Observer
 
 from face_utils import MediaPipeFaceAnalyzer
 from image_utils import list_jpeg_files
+from print_utils import print_sheet
 from selector import process_series
 from sheet_composer import compose_pending_sheets
 
@@ -31,6 +32,23 @@ def group_files_by_time(file_paths: list[Path], max_gap_seconds: float) -> list[
         previous_path = current_path
 
     return groups
+
+
+def _autoprint_sheets(sheets: list, config: dict, logger) -> None:
+    """Print sheets if autoprint is enabled and test_mode is off."""
+    print_config = config.get("print", {})
+    if not print_config.get("autoprint", False):
+        return
+    if print_config.get("test_mode", True):
+        logger.info("Автопечать пропущена: включён тестовый режим")
+        return
+    printer_name = print_config.get("printer_name", "")
+    for sheet_path in sheets:
+        ok = print_sheet(Path(sheet_path), printer_name)
+        if ok:
+            logger.info("Лист отправлен на печать: %s", sheet_path)
+        else:
+            logger.warning("Ошибка печати листа: %s", sheet_path)
 
 
 def process_folder(
@@ -67,9 +85,12 @@ def process_folder(
 
     generated_sheets = compose_pending_sheets(config, logger, allow_partial=False)
 
+    _autoprint_sheets(generated_sheets, config, logger)
+
     return {
         "series_total": len(groups),
         "selected_total": sum(result["status"] == "selected" for result in results),
+        "ambiguous_total": sum(result["status"] == "ambiguous_manual_review" for result in results),
         "discarded_total": sum(result["status"] == "discarded_empty" for result in results),
         "sheets_total": len(generated_sheets),
         "results": results,
@@ -146,7 +167,8 @@ def watch_incoming_folder(config: dict, logger) -> None:
                         remove_source_files=True,
                         save_annotations=True,
                     )
-                    compose_pending_sheets(config, logger)
+                    sheets = compose_pending_sheets(config, logger)
+                    _autoprint_sheets(sheets, config, logger)
                     series_index += 1
             time.sleep(0.5)
     finally:

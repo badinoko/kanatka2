@@ -46,6 +46,7 @@ def ensure_runtime_directories(config: dict[str, Any]) -> None:
         "photo_metadata_dir",
         "log_dir",
         "annotated_dir",
+        "output_ambiguous",
     ):
         Path(config["paths"][key]).mkdir(parents=True, exist_ok=True)
 

@@ -67,7 +67,18 @@ def process_series(
 
     best_result = max(occupied_results, key=lambda item: item["score"])
     best_path = Path(best_result["file_path"])
-    selected_output = Path(config["paths"]["output_selected"]) / f"{series_name}_{best_path.name}"
+
+    # Determine decision_state
+    decision_state = _compute_decision_state(occupied_results, best_result, config)
+
+    # Route: ambiguous series go to separate folder so they don't block sheet assembly
+    if decision_state == "ambiguous_manual_review":
+        ambiguous_dir = Path(config["paths"].get("output_ambiguous", "workdir/ambiguous"))
+        ambiguous_dir.mkdir(parents=True, exist_ok=True)
+        selected_output = ambiguous_dir / f"{series_name}_{best_path.name}"
+    else:
+        selected_output = Path(config["paths"]["output_selected"]) / f"{series_name}_{best_path.name}"
+
     shutil.copy2(best_path, selected_output)
 
     if write_photo_metadata:
@@ -101,10 +112,12 @@ def process_series(
             config=config,
         )
 
+    status = decision_state if decision_state == "ambiguous_manual_review" else "selected"
     save_json(
         {
             "series": series_name,
-            "status": "selected",
+            "status": status,
+            "decision_state": decision_state,
             "selected_file": selected_output.name,
             "source_file": best_path.name,
             "best_score": best_result["score"],
@@ -113,14 +126,45 @@ def process_series(
         report_path,
     )
 
-    logger.info("Серия %s: выбрано %s со score=%.2f", series_name, selected_output.name, best_result["score"])
+    logger.info("Серия %s: выбрано %s со score=%.2f [%s]", series_name, selected_output.name, best_result["score"], decision_state)
     return {
         "series_index": series_index,
-        "status": "selected",
+        "status": status,
+        "decision_state": decision_state,
         "selected_file": str(selected_output),
         "series_size": len(series_files),
         "best_score": best_result["score"],
     }
+
+
+def _compute_decision_state(
+    occupied_results: list[dict],
+    best_result: dict,
+    config: dict,
+) -> str:
+    """Determine whether the series selection is confident or ambiguous.
+
+    Returns ``"auto_selected"`` or ``"ambiguous_manual_review"``.
+    """
+    decision_config = config.get("decision", {})
+    if not decision_config.get("manual_review_enabled", True):
+        return "auto_selected"
+
+    delta_threshold = float(decision_config.get("delta_score", 8.0))
+
+    # Check quality gate of best result
+    quality_gate = best_result.get("score_breakdown", {}).get("quality_gate", "pass")
+    if quality_gate == "weak":
+        return "ambiguous_manual_review"
+
+    # Check delta between top-1 and top-2
+    if len(occupied_results) >= 2:
+        sorted_by_score = sorted(occupied_results, key=lambda r: r["score"], reverse=True)
+        delta = sorted_by_score[0]["score"] - sorted_by_score[1]["score"]
+        if delta < delta_threshold:
+            return "ambiguous_manual_review"
+
+    return "auto_selected"
 
 
 def build_rejected_dir(base_dir: Path, series_name: str, series_files: list[Path], suffix: str) -> Path:

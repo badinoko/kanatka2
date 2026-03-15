@@ -247,6 +247,41 @@ def _sync_rescued_to_network(files: list[Path], config: dict) -> int:
     return synced
 
 
+def _count_ambiguous_series() -> int:
+    """Count series with ambiguous_manual_review status from report JSONs."""
+    try:
+        from config_utils import load_config
+        config = load_config()
+        log_dir = Path(config["paths"]["log_dir"])
+    except Exception:
+        return 0
+    count = 0
+    for report_path in log_dir.glob("ser*_report.json"):
+        try:
+            data = json.loads(report_path.read_text(encoding="utf-8"))
+            if data.get("status") == "ambiguous_manual_review":
+                count += 1
+        except (json.JSONDecodeError, OSError):
+            pass
+    return count
+
+
+def confirm_ambiguous(series_name: str, config: dict) -> bool:
+    """Move the ambiguous series photo from ambiguous/ to selected/.
+
+    Returns True on success.
+    """
+    ambiguous_dir = Path(config["paths"].get("output_ambiguous", "workdir/ambiguous"))
+    selected_dir = Path(config["paths"]["output_selected"])
+    selected_dir.mkdir(parents=True, exist_ok=True)
+
+    for f in ambiguous_dir.glob(f"{series_name}_*"):
+        dest = selected_dir / f.name
+        shutil.move(str(f), str(dest))
+        return True
+    return False
+
+
 def _find_photo_path(file_path_str: str, inbox_dir: Path, file_name: str) -> Path | None:
     """Try to locate the actual photo file on disk."""
     direct = Path(file_path_str)
@@ -569,6 +604,21 @@ function setView(mode) {
     }
 })();
 
+function confirmAmbiguous(seriesName) {
+    if (!confirm('Подтвердить выбор для серии ' + seriesName + '? Фото будет перемещено в selected и станет доступно для следующего листа.')) return;
+    fetch('/api/confirm-ambiguous', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({series: seriesName}),
+        credentials: 'same-origin'
+    }).then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.ok) { location.reload(); }
+        else { alert('Ошибка: ' + (data.error || 'неизвестная')); }
+    })
+    .catch(function(e) { alert('Ошибка: ' + e.message); });
+}
+
 function submitBatch() {
     var checked = document.querySelectorAll('.photo-checkbox:checked');
     if (checked.length === 0) return;
@@ -592,6 +642,47 @@ function submitBatch() {
         container.appendChild(inp2);
     }
     form.submit();
+}
+
+// Cleanup modal
+function openCleanup() {
+    document.getElementById('cleanup-modal').style.display = 'flex';
+}
+function closeCleanup() {
+    document.getElementById('cleanup-modal').style.display = 'none';
+}
+function toggleCleanupAll(master) {
+    var cbs = document.querySelectorAll('#cleanup-modal input[type=checkbox][name]');
+    for (var i = 0; i < cbs.length; i++) cbs[i].checked = master.checked;
+}
+function runCleanup() {
+    var cbs = document.querySelectorAll('#cleanup-modal input[type=checkbox][name]:checked');
+    if (cbs.length === 0) { alert('Ничего не выбрано'); return; }
+    var folders = [];
+    for (var i = 0; i < cbs.length; i++) folders.push(cbs[i].name);
+    var names = [];
+    for (var i = 0; i < cbs.length; i++) names.push(cbs[i].parentElement.textContent.trim());
+    fetch('/api/cleanup', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({folders: folders}),
+        credentials: 'same-origin'
+    }).then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.status === 'ok') {
+            closeCleanup();
+            location.reload();
+        } else {
+            alert('Ошибка: ' + (data.error || 'неизвестная'));
+        }
+    })
+    .catch(function(e) { alert('Ошибка: ' + e.message); });
+}
+
+function openFullscreen(src) {
+    var ov = document.getElementById('fullscreen');
+    ov.querySelector('img').src = src;
+    ov.classList.add('active');
 }
 """
 
@@ -622,6 +713,31 @@ def _page(title: str, body: str, stats: str = "", active_nav: str = "series",
     else:
         monitor_html = ""
 
+    # Ambiguous series indicator
+    ambiguous_count = _count_ambiguous_series()
+    if ambiguous_count > 0:
+        monitor_html += (
+            f'<a href="/?filter=ambiguous" style="margin-left:12px; font-size:13px; '
+            f'color:#f39c12; font-weight:600; text-decoration:none">'
+            f'&#9888; {ambiguous_count} спорных'
+            f'</a>'
+        )
+
+    # Test mode / autoprint indicator
+    _cfg = getattr(SeriesBrowserHandler, "config", None) or {}
+    _print_cfg = _cfg.get("print", {})
+    if _print_cfg.get("test_mode", False):
+        monitor_html += (
+            '<span style="margin-left:12px; font-size:13px; color:#f1c40f; '
+            'font-weight:700; background:#333; padding:2px 8px; border-radius:6px">'
+            'TEST MODE</span>'
+        )
+    elif _print_cfg.get("autoprint", False):
+        monitor_html += (
+            '<span style="margin-left:12px; font-size:13px; color:#2ecc71; font-weight:600">'
+            '&#9113; Автопечать</span>'
+        )
+
     return (
         '<!DOCTYPE html>\n'
         '<html lang="ru"><head>\n'
@@ -633,13 +749,36 @@ def _page(title: str, body: str, stats: str = "", active_nav: str = "series",
         '  <a href="/" class="brand">&#127935; Kanatka</a>\n'
         '  <div class="nav-links">\n'
         f'    <a href="/" class="{nav_cls("series")}">Серии</a>\n'
+        f'    <a href="/sheets" class="{nav_cls("sheets")}">&#128196; Листы</a>\n'
         f'    <a href="/settings" class="{nav_cls("settings")}">&#9881; Настройки</a>\n'
+        '    <a href="#" onclick="openCleanup(); return false;" style="color:#e74c3c">&#128465; Очистка</a>\n'
         '  </div>\n'
         f'  {view_switcher_html}'
         f'  {monitor_html}'
         f'  <div class="nav-right">{stats}</div>\n'
         '</nav>\n'
         f'<div class="container">{body}</div>\n'
+        '<div id="cleanup-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%;'
+        ' background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center">'
+        '<div style="background:#fff; border-radius:16px; padding:28px 32px; max-width:420px; width:90%">'
+        '<h3 style="margin-top:0">&#128465; Очистка рабочих папок</h3>'
+        '<p style="color:#666; font-size:13px; margin-bottom:16px">Выберите папки для очистки. Файлы будут удалены безвозвратно.</p>'
+        '<div style="display:flex; flex-direction:column; gap:10px">'
+        '<label style="cursor:pointer"><input type="checkbox" name="incoming"> Входящие фото (ожидают обработки)</label>'
+        '<label style="cursor:pointer"><input type="checkbox" name="selected"> Лучшие фото (отобранные)</label>'
+        '<label style="cursor:pointer"><input type="checkbox" name="rejected"> Худшие фото серий</label>'
+        '<label style="cursor:pointer"><input type="checkbox" name="discarded"> Пустые кресла</label>'
+        '<label style="cursor:pointer"><input type="checkbox" name="ambiguous"> Спорные серии</label>'
+        '<label style="cursor:pointer"><input type="checkbox" name="sheets"> Печатные листы</label>'
+        '<label style="cursor:pointer"><input type="checkbox" name="archive"> Архив обработанных</label>'
+        '<label style="cursor:pointer"><input type="checkbox" name="logs"> Отчёты серий, логи, аннотации</label>'
+        '<hr style="margin:8px 0">'
+        '<label style="cursor:pointer; color:#e74c3c; font-weight:700"><input type="checkbox" onchange="toggleCleanupAll(this)"> Выбрать всё</label>'
+        '</div>'
+        '<div style="display:flex; gap:12px; margin-top:20px; justify-content:flex-end">'
+        '<button onclick="closeCleanup()" style="padding:8px 20px; border:1px solid #ddd; border-radius:8px; background:#fff; cursor:pointer">Отмена</button>'
+        '<button onclick="runCleanup()" style="padding:8px 20px; border:none; border-radius:8px; background:#e74c3c; color:#fff; cursor:pointer; font-weight:600">Удалить</button>'
+        '</div></div></div>\n'
         '<div id="fullscreen" class="fullscreen-overlay" onclick="this.classList.remove(\'active\')"><img src=""></div>\n'
         f'<script>{_JS}</script>\n'
         '</body></html>'
@@ -693,6 +832,8 @@ def _render_series_card(series: dict) -> str:
 
     if status == "selected":
         badge = '<span class="badge badge-selected">Выбрано</span>'
+    elif status == "ambiguous_manual_review":
+        badge = '<span class="badge" style="background:#f39c12; color:#fff">&#9888; Спорная</span>'
     elif status == "discarded_empty":
         badge = '<span class="badge badge-empty">Пустое</span>'
     else:
@@ -716,37 +857,63 @@ def _render_series_card(series: dict) -> str:
         f'<div class="series-name">{name} {score_html}</div>'
         f'<div class="series-meta">{badge} &middot; {photo_count} фото</div>'
         '</div></a>'
-        f'<div style="padding:0 16px 12px">'
+        f'<div style="padding:0 16px 12px; display:flex; gap:6px">'
         f'<a href="/nearby/{name}" class="nearby-btn" style="font-size:12px; padding:5px 12px">'
-        'Рядом</a></div>'
+        'Рядом</a>'
+        + (f'<button onclick="confirmAmbiguous(\'{name}\')" class="nearby-btn" '
+           f'style="font-size:12px; padding:5px 12px; background:#27ae60; color:#fff; border:none; cursor:pointer">'
+           f'Подтвердить</button>'
+           if status == "ambiguous_manual_review" else "")
+        + '</div>'
         '</div>'
     )
 
 
-def _render_series_list(all_series: list[dict], page: int = 1) -> str:
+def _render_series_list(all_series: list[dict], page: int = 1, filter_status: str = "") -> str:
     selected_count = sum(1 for s in all_series if s.get("status") == "selected")
     empty_count = sum(1 for s in all_series if s.get("status") == "discarded_empty")
+    ambiguous_count = sum(1 for s in all_series if s.get("status") == "ambiguous_manual_review")
     total = len(all_series)
-    stats = f"Всего: {total} | Выбрано: {selected_count} | Пустых: {empty_count}"
+    stats = f"Всего: {total} | Выбрано: {selected_count} | Спорных: {ambiguous_count} | Пустых: {empty_count}"
+
+    # Filter
+    if filter_status == "ambiguous":
+        display_series = [s for s in all_series if s.get("status") == "ambiguous_manual_review"]
+    else:
+        display_series = all_series
 
     # Pagination
-    total_pages = max(1, (total + _SERIES_PER_PAGE - 1) // _SERIES_PER_PAGE)
+    filtered_total = len(display_series)
+    total_pages = max(1, (filtered_total + _SERIES_PER_PAGE - 1) // _SERIES_PER_PAGE)
     page = max(1, min(page, total_pages))
     start = (page - 1) * _SERIES_PER_PAGE
-    end = min(start + _SERIES_PER_PAGE, total)
-    page_series = all_series[start:end]
+    end = min(start + _SERIES_PER_PAGE, filtered_total)
+    page_series = display_series[start:end]
 
     cards = [_render_series_card(s) for s in page_series]
+
+    # Filter tabs
+    filter_param = f"&filter={filter_status}" if filter_status else ""
+    all_cls = "" if filter_status else "active"
+    amb_cls = "active" if filter_status == "ambiguous" else ""
+    filter_tabs = (
+        '<div style="margin-bottom:12px; display:flex; gap:8px">'
+        f'<a href="/" class="page-btn {all_cls}" style="text-decoration:none">Все ({total})</a>'
+        f'<a href="/?filter=ambiguous" class="page-btn {amb_cls}" style="text-decoration:none; '
+        f'color:{("#f39c12" if ambiguous_count else "#999")}">'
+        f'&#9888; Спорные ({ambiguous_count})</a>'
+        '</div>'
+    )
 
     # Pagination controls
     pagination = ""
     if total_pages > 1:
         parts = []
-        parts.append(f'<div class="pagination-info">Стр. {page} из {total_pages} ({total} серий)</div>')
+        parts.append(f'<div class="pagination-info">Стр. {page} из {total_pages} ({filtered_total} серий)</div>')
         parts.append('<div class="pagination-bar">')
 
         if page > 1:
-            parts.append(f'<a href="/?page={page - 1}" class="page-btn">&larr; Назад</a>')
+            parts.append(f'<a href="/?page={page - 1}{filter_param}" class="page-btn">&larr; Назад</a>')
 
         # Show up to 7 page buttons
         start_p = max(1, page - 3)
@@ -755,11 +922,11 @@ def _render_series_list(all_series: list[dict], page: int = 1) -> str:
 
         for p in range(start_p, end_p + 1):
             cls = "page-btn active" if p == page else "page-btn"
-            parts.append(f'<a href="/?page={p}" class="{cls}">{p}</a>')
+            parts.append(f'<a href="/?page={p}{filter_param}" class="{cls}">{p}</a>')
 
         if page < total_pages:
-            parts.append(f'<a href="/?page={page + 1}" class="page-btn">Далее &rarr;</a>')
-            parts.append(f'<a href="/?page={page + 1}" class="page-btn load-more">Загрузить ещё</a>')
+            parts.append(f'<a href="/?page={page + 1}{filter_param}" class="page-btn">Далее &rarr;</a>')
+            parts.append(f'<a href="/?page={page + 1}{filter_param}" class="page-btn load-more">Загрузить ещё</a>')
 
         parts.append('</div>')
         pagination = "\n".join(parts)
@@ -797,6 +964,7 @@ def _render_series_list(all_series: list[dict], page: int = 1) -> str:
 
     body = (
         monitor_bar
+        + filter_tabs
         + '<div class="series-grid view-medium">'
         + "".join(cards)
         + '</div>'
@@ -1051,21 +1219,45 @@ _SETTINGS_SCHEMA: list[tuple[str, str, list[tuple]]] = [
             ("thresholds", "head_brightness_tolerance", "Допуск яркости",
              "Насколько яркость может отклоняться от цели и всё ещё считаться хорошей.",
              "range", {"min": 20, "max": 150, "step": 5}),
+            ("thresholds", "fallback_score_ceiling", "Потолок fallback-кадра",
+             "Макс. оценка для кадра без найденного лица (только силуэт). Защита от ложных побед fallback.",
+             "range", {"min": 10, "max": 80, "step": 5}),
+            ("thresholds", "quality_fail_sharpness", "Брак: резкость",
+             "Резкость ниже этого порога = явный брак (экстремальный смаз).",
+             "range", {"min": 5, "max": 50, "step": 5}),
+            ("thresholds", "quality_weak_sharpness", "Слабая резкость",
+             "Резкость ниже этого порога = ограниченная оценка (мягкий потолок).",
+             "range", {"min": 15, "max": 80, "step": 5}),
+            ("thresholds", "pose_yaw_tolerance", "Допуск поворота головы",
+             "Макс. отклонение yaw (градусы) от фронтального ракурса. Больше = мягче к профилю.",
+             "range", {"min": 15, "max": 90, "step": 5}),
         ],
     ),
     (
         "Веса скоринга",
         "Как распределяется вес между компонентами оценки (сумма = 100).",
         [
-            ("scoring_weights", "person_present", "Наличие человека",
-             "Вес компонента: человек найден в кадре.",
+            ("scoring_weights", "head_readability", "Читаемость лица",
+             "Вес компонента: насколько хорошо распознаётся лицо (уверенность + ракурс + резкость).",
              "range", {"min": 0, "max": 100, "step": 5}),
-            ("scoring_weights", "sharpness", "Резкость",
-             "Вес компонента: резкость лица или кадра.",
+            ("scoring_weights", "head_pose", "Ракурс головы",
+             "Вес компонента: предпочтение фронтальным ракурсам.",
              "range", {"min": 0, "max": 100, "step": 5}),
-            ("scoring_weights", "exposure", "Освещение",
-             "Вес компонента: качество освещения.",
+            ("scoring_weights", "head_sharpness", "Резкость лица",
+             "Вес компонента: локальная резкость области лица.",
              "range", {"min": 0, "max": 100, "step": 5}),
+            ("scoring_weights", "head_exposure", "Освещение лица",
+             "Вес компонента: яркость области лица (ближе к целевой = лучше).",
+             "range", {"min": 0, "max": 100, "step": 5}),
+            ("scoring_weights", "readable_count", "Кол-во читаемых",
+             "Вес компонента: бонус за несколько читаемых людей на кресле.",
+             "range", {"min": 0, "max": 100, "step": 5}),
+            ("scoring_weights", "frame_quality", "Качество кадра",
+             "Вес компонента: общая резкость и яркость всего кадра.",
+             "range", {"min": 0, "max": 100, "step": 5}),
+            ("scoring_weights", "smile_bonus", "Бонус за улыбку",
+             "Вес компонента: слабое предпочтение позитивному выражению. Не должен побеждать читаемость.",
+             "range", {"min": 0, "max": 10, "step": 1}),
         ],
     ),
     (
@@ -1110,6 +1302,21 @@ _SETTINGS_SCHEMA: list[tuple[str, str, list[tuple]]] = [
              "text", {}),
         ],
     ),
+    (
+        "Печать",
+        "Автоматическая печать готовых листов.",
+        [
+            ("print", "autoprint", "Автопечать",
+             "Автоматически отправлять на печать каждый новый лист. Блокируется в тестовом режиме.",
+             "checkbox", {}),
+            ("print", "test_mode", "Тестовый режим",
+             "В тестовом режиме листы формируются, но не печатаются. Включите для безопасной проверки.",
+             "checkbox", {}),
+            ("print", "printer_name", "Имя принтера",
+             "Оставьте пустым для принтера по умолчанию.",
+             "text", {}),
+        ],
+    ),
 ]
 
 
@@ -1145,6 +1352,73 @@ def _render_auth_modal(config: dict, error: str = "") -> str:
         '</div></div>'
     )
     return _page("Kanatka — Вход", body, active_nav="settings")
+
+
+def _render_sheets_gallery(config: dict) -> str:
+    """Render the sheets gallery page for test mode preview."""
+    sheets_dir = Path(config["paths"]["output_sheets"])
+    if not sheets_dir.exists():
+        sheets_dir.mkdir(parents=True, exist_ok=True)
+
+    sheet_files = sorted(
+        sheets_dir.glob("*.jpg"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+
+    if not sheet_files:
+        body = '<h2 style="text-align:center; color:#999; margin-top:60px">Нет собранных листов</h2>'
+        return _page("Kanatka — Листы", body, active_nav="sheets")
+
+    cards = []
+    for sf in sheet_files:
+        mtime = sf.stat().st_mtime
+        from datetime import datetime as _dt
+        time_str = _dt.fromtimestamp(mtime).strftime("%d.%m.%Y %H:%M")
+        size_kb = sf.stat().st_size // 1024
+        thumb_url = f"/photo?path={sf.resolve()}&max_side=600"
+        full_url = f"/photo?path={sf.resolve()}&max_side=3600"
+        card = (
+            '<div class="sheet-card">'
+            f'<img src="{thumb_url}" onclick="openFullscreen(\'{full_url}\')" '
+            f'style="cursor:pointer; width:100%; border-radius:8px">'
+            f'<div style="margin-top:6px; font-size:13px; color:#666">'
+            f'{sf.name}<br>{time_str} &middot; {size_kb} KB</div>'
+            f'<button onclick="printSheet(\'{sf.name}\')" '
+            f'style="margin-top:6px; padding:4px 12px; font-size:13px; '
+            f'border:1px solid #ddd; border-radius:6px; background:#fff; cursor:pointer">'
+            f'&#9113; Печать</button>'
+            '</div>'
+        )
+        cards.append(card)
+
+    print_cfg = config.get("print", {})
+    mode_label = "TEST MODE" if print_cfg.get("test_mode", False) else "Рабочий режим"
+    mode_color = "#f1c40f" if print_cfg.get("test_mode", False) else "#2ecc71"
+
+    js = r"""
+function printSheet(name) {
+    if (!confirm('Отправить лист ' + name + ' на печать?')) return;
+    fetch('/api/print-sheet', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({sheet: name})
+    }).then(function(r) { return r.json(); }).then(function(d) {
+        alert(d.status === 'ok' ? 'Лист отправлен на печать' : 'Ошибка: ' + (d.error || 'неизвестная'));
+    });
+}
+"""
+
+    body = (
+        f'<h2>Собранные листы '
+        f'<span style="font-size:14px; color:{mode_color}; font-weight:700">{mode_label}</span>'
+        f'</h2>'
+        f'<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:16px">'
+        + "".join(cards)
+        + '</div>'
+        f'<script>{js}</script>'
+    )
+    return _page("Kanatka — Листы", body, active_nav="sheets")
 
 
 def _render_settings(config: dict) -> str:
@@ -1351,6 +1625,55 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
         self.send_header("Location", url)
         self.end_headers()
 
+    def _handle_cleanup(self, body: str) -> None:
+        """Delete files from selected workdir subfolders."""
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError:
+            self._send_json({"error": "invalid JSON"}, 400)
+            return
+
+        requested = data.get("folders", [])
+        if not requested:
+            self._send_json({"error": "no folders selected"}, 400)
+            return
+
+        # Map checkbox names to actual config paths
+        folder_map = {
+            "incoming": "input_folder",
+            "selected": "output_selected",
+            "rejected": "output_rejected",
+            "discarded": "output_discarded",
+            "ambiguous": "output_ambiguous",
+            "sheets": "output_sheets",
+            "archive": "output_archive",
+            "logs": "log_dir",
+        }
+
+        total_deleted = 0
+        for name in requested:
+            config_key = folder_map.get(name)
+            if not config_key:
+                continue
+            folder = Path(self.config["paths"].get(config_key, ""))
+            if not folder.exists():
+                continue
+            import shutil
+            for item in folder.iterdir():
+                try:
+                    if item.is_file():
+                        item.unlink()
+                        total_deleted += 1
+                    elif item.is_dir():
+                        shutil.rmtree(item)
+                        total_deleted += 1
+                except Exception:
+                    pass
+
+        # Clear series cache
+        SeriesBrowserHandler._series_cache = None
+        self._send_json({"status": "ok", "deleted": total_deleted})
+
     def _handle_monitor(self, body: str) -> None:
         """Start or stop INBOX monitoring."""
         try:
@@ -1496,7 +1819,8 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
         if path == "/":
             series = self._get_series()
             page = int(params.get("page", ["1"])[0])
-            html = _render_series_list(series, page=page)
+            filter_status = params.get("filter", [""])[0]
+            html = _render_series_list(series, page=page, filter_status=filter_status)
             self._send_html(html)
 
         elif path.startswith("/series/"):
@@ -1520,6 +1844,10 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
                 self._send_html(html)
             else:
                 self._send_html("<h1>Серия не найдена</h1>", 404)
+
+        elif path == "/sheets":
+            html = _render_sheets_gallery(self.config)
+            self._send_html(html)
 
         elif path == "/settings":
             # Check auth
@@ -1574,6 +1902,10 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
         content_len = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(content_len).decode("utf-8")
 
+        if parsed.path == "/api/cleanup":
+            self._handle_cleanup(body)
+            return
+
         if parsed.path == "/api/monitor":
             self._handle_monitor(body)
             return
@@ -1597,6 +1929,49 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "unauthorized"}, 401)
                 return
             self._handle_save_settings(body)
+            return
+
+        if parsed.path == "/api/confirm-ambiguous":
+            try:
+                data = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                data = {}
+            series_name = data.get("series", "")
+            if not series_name:
+                self._send_json({"error": "missing series"}, 400)
+                return
+            ok = confirm_ambiguous(series_name, self.config)
+            if ok:
+                SeriesBrowserHandler._series_cache = None
+                self._send_json({"status": "ok"})
+            else:
+                self._send_json({"error": "not found or already confirmed"}, 404)
+            return
+
+        if parsed.path == "/api/print-sheet":
+            try:
+                data = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                data = {}
+            sheet_name = data.get("sheet", "")
+            if not sheet_name:
+                self._send_json({"error": "missing sheet name"}, 400)
+                return
+            sheets_dir = Path(self.config["paths"]["output_sheets"])
+            sheet_path = sheets_dir / sheet_name
+            if not sheet_path.exists():
+                self._send_json({"error": "sheet not found"}, 404)
+                return
+            print_cfg = self.config.get("print", {})
+            if print_cfg.get("test_mode", True):
+                self._send_json({"error": "печать заблокирована в тестовом режиме"}, 400)
+                return
+            from print_utils import print_sheet
+            ok = print_sheet(sheet_path, print_cfg.get("printer_name", ""))
+            if ok:
+                self._send_json({"status": "ok"})
+            else:
+                self._send_json({"error": "print failed"}, 500)
             return
 
         params = parse_qs(body)
