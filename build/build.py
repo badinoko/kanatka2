@@ -1,11 +1,10 @@
-"""Build script for creating EXE distributions and Windows installers.
+"""Build script for creating PhotoSelector EXE and Windows installer.
 
 Usage:
-    python build/build.py                    # Build both EXEs + both installers
-    python build/build.py --main             # Build main app EXE only
-    python build/build.py --receiver         # Build receiver EXE only
-    python build/build.py --installers       # Build Inno Setup installers only (requires EXEs)
-    python build/build.py --all              # Build everything
+    python build/build.py                    # Build EXE + installer (default)
+    python build/build.py --exe              # Build EXE only
+    python build/build.py --installer        # Build Inno Setup installer only (requires EXE)
+    python build/build.py --receiver         # Build legacy receiver (optional, not part of standard build)
 """
 from __future__ import annotations
 
@@ -44,13 +43,14 @@ def find_iscc() -> Path | None:
 def build_main() -> bool:
     """Build the main PhotoSelector EXE."""
     print("=" * 60)
-    print("Building PhotoSelector (main app)...")
+    print("Building PhotoSelector...")
     print("=" * 60)
     spec = BUILD_DIR / "kanatka.spec"
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--distpath", str(DIST_DIR),
         "--workpath", str(BUILD_DIR / "work_main"),
+        "-y",
         str(spec),
     ]
     result = subprocess.run(cmd, cwd=str(PROJECT_ROOT))
@@ -62,15 +62,16 @@ def build_main() -> bool:
 
 
 def build_receiver() -> bool:
-    """Build the Receiver EXE."""
+    """Build the legacy Receiver EXE (optional, not part of standard build)."""
     print("=" * 60)
-    print("Building KanatkaReceiver...")
+    print("Building KanatkaReceiver (legacy/optional)...")
     print("=" * 60)
     spec = BUILD_DIR / "receiver.spec"
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--distpath", str(DIST_DIR),
         "--workpath", str(BUILD_DIR / "work_receiver"),
+        "-y",
         str(spec),
     ]
     result = subprocess.run(cmd, cwd=str(PROJECT_ROOT))
@@ -81,12 +82,19 @@ def build_receiver() -> bool:
     return True
 
 
-def build_installer(name: str, iss_file: str, iscc: Path) -> bool:
-    """Build a single Inno Setup installer."""
+def build_installer() -> bool:
+    """Build the PhotoSelector Inno Setup installer."""
+    iscc = find_iscc()
+    if not iscc:
+        print("ERROR: Inno Setup not found!")
+        print("Install: winget install JRSoftware.InnoSetup")
+        return False
+
+    print(f"Using Inno Setup: {iscc}\n")
     print("=" * 60)
-    print(f"Building installer: {name}...")
+    print("Building installer: PhotoSelector...")
     print("=" * 60)
-    iss_path = BUILD_DIR / iss_file
+    iss_path = BUILD_DIR / "photoselector.iss"
     if not iss_path.exists():
         print(f"FAILED: {iss_path} not found")
         return False
@@ -95,48 +103,32 @@ def build_installer(name: str, iss_file: str, iscc: Path) -> bool:
     cmd = [str(iscc), str(iss_path)]
     result = subprocess.run(cmd, cwd=str(BUILD_DIR))
     if result.returncode != 0:
-        print(f"FAILED: {name} installer build failed")
+        print("FAILED: PhotoSelector installer build failed")
         return False
-    print(f"SUCCESS: {name} installer built -> installers/")
+    print("SUCCESS: PhotoSelector installer built -> installers/")
     return True
 
 
-def build_installers() -> bool:
-    """Build both Inno Setup installers."""
-    iscc = find_iscc()
-    if not iscc:
-        print("ERROR: Inno Setup not found!")
-        print("Install: winget install JRSoftware.InnoSetup")
-        return False
-
-    print(f"Using Inno Setup: {iscc}\n")
-    ok1 = build_installer("PhotoSelector", "photoselector.iss", iscc)
-    ok2 = build_installer("KanatkaReceiver", "receiver.iss", iscc)
-    return ok1 and ok2
-
-
 def main():
-    parser = argparse.ArgumentParser(description="Build kanatka2 EXE distributions and installers")
-    parser.add_argument("--main", action="store_true", help="Build main app EXE only")
-    parser.add_argument("--receiver", action="store_true", help="Build receiver EXE only")
-    parser.add_argument("--installers", action="store_true", help="Build Inno Setup installers only")
-    parser.add_argument("--all", action="store_true", help="Build everything (default)")
+    parser = argparse.ArgumentParser(description="Build PhotoSelector EXE and installer")
+    parser.add_argument("--exe", action="store_true", help="Build PhotoSelector EXE only")
+    parser.add_argument("--installer", action="store_true", help="Build Inno Setup installer only")
+    parser.add_argument("--receiver", action="store_true", help="Build legacy receiver EXE (optional)")
     args = parser.parse_args()
 
-    if not args.main and not args.receiver and not args.installers:
-        args.all = True
+    # Default: build EXE + installer
+    build_all = not args.exe and not args.installer and not args.receiver
 
     results = []
 
-    # Build EXEs
-    if args.main or args.all:
+    if args.exe or build_all:
         results.append(("PhotoSelector EXE", build_main()))
-    if args.receiver or args.all:
-        results.append(("KanatkaReceiver EXE", build_receiver()))
 
-    # Build installers
-    if args.installers or args.all:
-        results.append(("Installers", build_installers()))
+    if args.receiver:
+        results.append(("KanatkaReceiver EXE (legacy)", build_receiver()))
+
+    if args.installer or build_all:
+        results.append(("PhotoSelector Installer", build_installer()))
 
     print("\n" + "=" * 60)
     print("Build Summary:")

@@ -590,3 +590,22 @@
   - Обновлён `camera_simulator.py`: поддержка подпапок (каждая = серия), серии по 8 кадров, улучшенное логирование.
   - Создана шпаргалка `docs/test_photo_generation_guide.md`: 10 промптов для ComfyUI, полная инструкция по генерации реалистичных тестовых серий на RunPod (RTX Pro 6000 Blackwell).
   - Разрешение тестовых фото: 1536×1024 (3:2), соответствует Canon EOS R100.
+
+- **KAN-056: Подготовка пакета для заказчика.**
+  - Добавлена группа «Рабочие папки» в настройки инженера: input_folder, output_selected, output_sheets, output_discarded, output_rejected, output_archive. Заказчик может менять пути через веб-интерфейс.
+  - После сохранения настроек путей автоматически создаются директории (ensure_runtime_directories).
+  - Создано руководство по тестированию: `docs/user_testing_guide.md` — установка, первый запуск, три способа тестирования, описание интерфейса, FAQ.
+  - Build-скрипт обновлён: добавлен флаг `-y` для автоматической перезаписи dist/.
+  - Пересобран PhotoSelector EXE (PyInstaller) и инсталлятор (Inno Setup): PhotoSelector_Setup.exe — 53 МБ.
+  - Build-скрипт переработан: по умолчанию собирает только PhotoSelector. Receiver — optional/legacy, собирается только по --receiver.
+  - Удалён KanatkaReceiver_Setup.exe из installers/ — receiver не является частью пакета для заказчика.
+  - 45 тестов проходят.
+
+- **KAN-057: Чистка документации — единое описание продукта.**
+  - Во всех документах проекта (overview.md, CLAUDE.md, CODEX.md, startup.md, README.md) зафиксировано: **продукт = одна программа PhotoSelector**. Не две, не клиент-сервер. `receiver/` — legacy, не поставляется.
+  - README.md полностью переписан: актуальная архитектура, 45 тестов, 7-компонентный скоринг, рабочие папки.
+  - CLAUDE.md: убрана таблица «двух конкурирующих схем», receiver чётко помечен как legacy.
+  - overview.md: Product Snapshot переписан однозначно. KAN-031 → LEGACY. KAN-041 → DONE.
+  - Инсталлятор обновлён: создаёт workdir/ с подпапками при установке, включает batch-файлы и README.
+  - Созданы `run_photoselector.bat` и `process_folder.bat` для заказчика.
+  - Руководство по тестированию (`docs/user_testing_guide.md`) переписано: конкретные шаги, без лишнего.

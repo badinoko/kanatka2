@@ -1,5 +1,5 @@
 ; Inno Setup Script for PhotoSelector
-; Основная программа канатки — автоматический отбор фото
+; Автоматический отбор фото с горнолыжной канатки
 
 #define MyAppName "PhotoSelector"
 #define MyAppVersion "1.0"
@@ -29,11 +29,28 @@ ArchitecturesInstallIn64BitMode=x64compatible
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
+; Main EXE and internal dependencies
 Source: "..\dist\PhotoSelector\PhotoSelector.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\PhotoSelector\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Batch helpers and docs
+Source: "run_photoselector.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "process_folder.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\docs\user_testing_guide.md"; DestDir: "{app}"; DestName: "README.md"; Flags: ignoreversion
+
+[Dirs]
+; Create working directories on install
+Name: "{app}\workdir"
+Name: "{app}\workdir\incoming"
+Name: "{app}\workdir\selected"
+Name: "{app}\workdir\sheets"
+Name: "{app}\workdir\discarded"
+Name: "{app}\workdir\rejected"
+Name: "{app}\workdir\archive"
+Name: "{app}\workdir\ambiguous"
+Name: "{app}\workdir\logs"
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

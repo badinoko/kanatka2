@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from PIL import Image
 
-from config_utils import save_config
+from config_utils import ensure_runtime_directories, save_config
 from logger_setup import build_logger
 
 
@@ -1291,6 +1291,30 @@ _SETTINGS_SCHEMA: list[tuple[str, str, list[tuple]]] = [
         ],
     ),
     (
+        "Рабочие папки",
+        "Пути к рабочим директориям. Можно указать абсолютные пути или относительные (от папки программы).",
+        [
+            ("paths", "input_folder", "Входящие фото",
+             "Папка, куда камера складывает снимки. Мониторинг следит за этой папкой.",
+             "text", {}),
+            ("paths", "output_selected", "Лучшие фото",
+             "Сюда сохраняются отобранные фото (по одному на серию).",
+             "text", {}),
+            ("paths", "output_sheets", "Печатные листы",
+             "Сюда сохраняются собранные листы для печати.",
+             "text", {}),
+            ("paths", "output_discarded", "Пустые кресла",
+             "Сюда перемещаются фото серий без людей.",
+             "text", {}),
+            ("paths", "output_rejected", "Отклонённые фото",
+             "Сюда перемещаются фото, проигравшие при отборе.",
+             "text", {}),
+            ("paths", "output_archive", "Архив",
+             "Сюда перемещаются обработанные фото после сборки листа.",
+             "text", {}),
+        ],
+    ),
+    (
         "Сеть",
         "Автосинхронизация в сетевую папку типографии.",
         [
@@ -1298,7 +1322,7 @@ _SETTINGS_SCHEMA: list[tuple[str, str, list[tuple]]] = [
              "Автоматически копировать новые листы в сетевую папку после сборки.",
              "checkbox", {}),
             ("network", "output_path", "Сетевая папка",
-             "Путь к общей папке (UNC или диск), куда копировать листы.",
+             "Путь к общей папке (UNC или диск), куда копировать листы. Например: \\\\PRINTER-PC\\kanatka",
              "text", {}),
         ],
     ),
@@ -1817,6 +1841,7 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
                 self.config[section][key] = str(value)
 
         save_config(self.config)
+        ensure_runtime_directories(self.config)
         self._send_json({"status": "ok"})
 
     def do_GET(self) -> None:
