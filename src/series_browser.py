@@ -14,12 +14,14 @@ import shutil
 import threading
 import time
 import webbrowser
+from html import escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from PIL import Image
 
+from badge_utils import DEBUG_COLUMNS
 from config_utils import ensure_runtime_directories, save_config
 from logger_setup import build_logger
 
@@ -56,19 +58,23 @@ def _start_monitoring(config: dict) -> None:
     if _MonitorState.is_active():
         return
 
-    from watcher import (
-        IncomingFolderHandler,
-        PendingQueue,
-        group_files_by_time,
-    )
-    from face_utils import MediaPipeFaceAnalyzer
-    from selector import process_series
-    from sheet_composer import compose_pending_sheets
-
     try:
+        from watcher import (
+            IncomingFolderHandler,
+            PendingQueue,
+            group_files_by_time,
+        )
+        from face_utils import MediaPipeFaceAnalyzer
+        from selector import process_series
+        from sheet_composer import compose_pending_sheets
         from watchdog.observers import Observer
-    except ImportError:
-        _MonitorState.error = "watchdog не установлен"
+    except ImportError as exc:
+        _MonitorState.running = False
+        _MonitorState.error = f"Не удалось загрузить зависимости мониторинга: {exc}"
+        return
+    except Exception as exc:
+        _MonitorState.running = False
+        _MonitorState.error = f"Не удалось подготовить мониторинг: {exc}"
         return
 
     incoming_dir = Path(config["paths"]["input_folder"])
@@ -85,13 +91,31 @@ def _start_monitoring(config: dict) -> None:
     def monitor_loop() -> None:
         logger = build_logger(config["paths"]["log_dir"])
         logger.info("Автономный режим: мониторинг %s", incoming_dir)
-
-        analyzer = MediaPipeFaceAnalyzer(config["thresholds"]["min_face_confidence"])
-        pending = PendingQueue()
-        observer = Observer()
-        observer.schedule(IncomingFolderHandler(pending), str(incoming_dir), recursive=False)
-        observer.start()
-        _MonitorState.observer = observer
+        observer = None
+        analyzer = None
+        try:
+            analyzer = MediaPipeFaceAnalyzer(config["thresholds"]["min_face_confidence"])
+            pending = PendingQueue()
+            observer = Observer()
+            observer.schedule(IncomingFolderHandler(pending), str(incoming_dir), recursive=False)
+            observer.start()
+            _MonitorState.observer = observer
+        except Exception as exc:
+            logger.exception("Ошибка запуска мониторинга: %s", exc)
+            _MonitorState.error = f"Мониторинг не запущен: {exc}"
+            _MonitorState.running = False
+            if observer is not None:
+                try:
+                    observer.stop()
+                    observer.join()
+                except Exception:
+                    pass
+            if analyzer is not None:
+                try:
+                    analyzer.close()
+                except Exception:
+                    pass
+            return
 
         series_idx = 1
         try:
@@ -114,11 +138,14 @@ def _start_monitoring(config: dict) -> None:
                         series_idx += 1
                 time.sleep(0.5)
         except Exception as exc:
+            logger.exception("Ошибка во время мониторинга: %s", exc)
             _MonitorState.error = str(exc)
         finally:
-            observer.stop()
-            observer.join()
-            analyzer.close()
+            if observer is not None:
+                observer.stop()
+                observer.join()
+            if analyzer is not None:
+                analyzer.close()
             _MonitorState.running = False
 
     _MonitorState.thread = threading.Thread(target=monitor_loop, daemon=True)
@@ -199,12 +226,6 @@ def rescue_batch(
     copied: list[Path] = []
     for item in photos:
         source = Path(item["path"])
-        if not source.exists():
-            # Try INBOX fallback
-            inbox = Path(config["paths"]["test_photos_folder"])
-            if not inbox.is_absolute():
-                inbox = Path.cwd() / inbox
-            source = inbox / Path(item["path"]).name
         if not source.exists():
             continue
         series_name = item["series"]
@@ -293,6 +314,89 @@ def _find_photo_path(file_path_str: str, inbox_dir: Path, file_name: str) -> Pat
     return None
 
 
+def _resolve_runtime_path(config: dict, key: str) -> Path:
+    path = Path(config["paths"].get(key, ""))
+    if not path.is_absolute():
+        from config_utils import get_project_root
+        path = get_project_root() / path
+    return path
+
+
+def _find_existing_photo_for_series(
+    photo: dict,
+    series_name: str,
+    config: dict,
+    selected_file: str = "",
+) -> Path | None:
+    file_name = photo.get("file_name", "")
+    file_path = photo.get("file_path", "")
+
+    direct = Path(file_path) if file_path else None
+    if direct and direct.exists():
+        return direct
+
+    input_folder = _resolve_runtime_path(config, "input_folder")
+    if file_name:
+        inbox_candidate = input_folder / file_name
+        if inbox_candidate.exists():
+            return inbox_candidate
+
+    if selected_file and file_name and selected_file == f"{series_name}_{file_name}":
+        selected_candidate = _resolve_runtime_path(config, "output_selected") / selected_file
+        if selected_candidate.exists():
+            return selected_candidate
+
+    return None
+
+
+def _series_has_live_assets(series: dict, config: dict) -> bool:
+    selected_file = series.get("selected_file", "")
+    series_name = series.get("series", "")
+    photos = series.get("photos", [])
+
+    if selected_file:
+        selected_candidate = _resolve_runtime_path(config, "output_selected") / selected_file
+        if selected_candidate.exists():
+            return True
+
+    for photo in photos:
+        if _find_existing_photo_for_series(photo, series_name, config, selected_file=selected_file):
+            return True
+    return False
+
+
+def _find_rescue_source(photo: dict, config: dict) -> Path | None:
+    file_name = photo.get("file_name", "")
+    file_path = photo.get("file_path", "")
+    input_folder = _resolve_runtime_path(config, "input_folder")
+    return _find_photo_path(file_path, input_folder, file_name)
+
+
+def _series_visibility(all_series: list[dict], config: dict) -> tuple[list[dict], list[dict]]:
+    live_series: list[dict] = []
+    history_series: list[dict] = []
+    for series in all_series:
+        if _series_has_live_assets(series, config):
+            live_series.append(series)
+        else:
+            history_series.append(series)
+    return live_series, history_series
+
+
+def _resolve_series_card_thumb(series: dict, config: dict) -> Path | None:
+    selected_file = series.get("selected_file", "")
+    series_name = series.get("series", "")
+    if selected_file:
+        selected_candidate = _resolve_runtime_path(config, "output_selected") / selected_file
+        if selected_candidate.exists():
+            return selected_candidate
+    for photo in series.get("photos", []):
+        existing = _find_existing_photo_for_series(photo, series_name, config, selected_file=selected_file)
+        if existing:
+            return existing
+    return None
+
+
 def _thumb_bytes(image_path: Path, max_side: int = 400) -> bytes:
     """Load an image and return JPEG thumbnail bytes."""
     with Image.open(image_path) as img:
@@ -301,6 +405,96 @@ def _thumb_bytes(image_path: Path, max_side: int = 400) -> bytes:
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=80)
         return buf.getvalue()
+
+
+def _build_lightbox_debug_html(photo: dict) -> str:
+    """Build rich HTML for score inspection inside the lightbox."""
+    score = photo.get("score", 0.0)
+    score_val = float(score) if isinstance(score, (int, float)) else 0.0
+    breakdown = photo.get("score_breakdown", {}) or {}
+    weights = photo.get("scoring_weights", {}) or {}
+    detect_info = _detect_label(
+        bool(photo.get("subject_present", False)),
+        bool(photo.get("person_fallback", False)),
+    )
+    quality_gate = breakdown.get("quality_gate", "n/a")
+    readable_faces = photo.get("readable_face_count", 0)
+    rows = []
+
+    for key, label in DEBUG_COLUMNS:
+        raw_value = breakdown.get(key, 0.0)
+        numeric_value = float(raw_value) if isinstance(raw_value, (int, float)) else 0.0
+        weight_value = float(weights.get(key, 0.0)) if isinstance(weights.get(key, 0.0), (int, float)) else 0.0
+        rows.append(
+            '<div class="lightbox-debug-row">'
+            f'<span class="debug-label">{escape(label)}</span>'
+            f'<span class="debug-raw">{numeric_value:.2f}</span>'
+            f'<span class="debug-points">+{numeric_value * weight_value:.1f}</span>'
+            '</div>'
+        )
+
+    if isinstance(breakdown.get("smile_bonus"), (int, float)) and "smile_bonus" in weights:
+        smile = float(breakdown["smile_bonus"])
+        smile_weight = float(weights.get("smile_bonus", 0.0))
+        rows.append(
+            '<div class="lightbox-debug-row">'
+            '<span class="debug-label">Улыбка</span>'
+            f'<span class="debug-raw">{smile:.2f}</span>'
+            f'<span class="debug-points">+{smile * smile_weight:.1f}</span>'
+            '</div>'
+        )
+
+    if not rows:
+        rows.append('<div class="lightbox-debug-empty">Нет breakdown-данных для этого кадра.</div>')
+
+    return (
+        '<div class="lightbox-debug-summary">'
+        f'<span><b>Score:</b> {score_val:.1f}</span>'
+        f'<span><b>Gate:</b> {escape(str(quality_gate))}</span>'
+        f'<span><b>Детекция:</b> {escape(detect_info)}</span>'
+        f'<span><b>Лиц читаемо:</b> {int(readable_faces) if isinstance(readable_faces, (int, float)) else 0}</span>'
+        '</div>'
+        '<div class="lightbox-debug-table">'
+        + "".join(rows)
+        + '</div>'
+    )
+
+
+def _build_inline_debug_html(photo: dict) -> str:
+    """Compact score breakdown shown below photo cards when debug mode is enabled."""
+    breakdown = photo.get("score_breakdown", {}) or {}
+    chips = []
+    for key, label in DEBUG_COLUMNS:
+        raw_value = breakdown.get(key)
+        if not isinstance(raw_value, (int, float)):
+            continue
+        chips.append(
+            '<span class="debug-chip">'
+            f'{escape(label)}: <b>{float(raw_value):.2f}</b>'
+            '</span>'
+        )
+    if isinstance(breakdown.get("smile_bonus"), (int, float)):
+        chips.append(
+            '<span class="debug-chip">'
+            f'Улыбка: <b>{float(breakdown["smile_bonus"]):.2f}</b>'
+            '</span>'
+        )
+    if not chips:
+        return ""
+    return '<div class="debug-breakdown">' + "".join(chips) + '</div>'
+
+
+def _build_lightbox_payload_attr(src: str, title: str, subtitle: str, debug_html: str = "") -> str:
+    payload = json.dumps(
+        {
+            "src": src,
+            "title": title,
+            "subtitle": subtitle,
+            "debug_html": debug_html,
+        },
+        ensure_ascii=False,
+    )
+    return escape(payload, quote=True)
 
 
 # ---------------------------------------------------------------------------
@@ -320,6 +514,11 @@ body { font-family: -apple-system, 'Segoe UI', Arial, sans-serif; background: #f
                        font-size: 14px; font-weight: 500; transition: all 0.15s; }
 .navbar .nav-links a:hover { color: #fff; background: rgba(255,255,255,0.1); }
 .navbar .nav-links a.active { color: #fff; background: rgba(255,255,255,0.15); }
+.navbar .nav-links .nav-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14);
+                               color: rgba(255,255,255,0.82); padding: 8px 14px; border-radius: 6px; cursor: pointer;
+                               font-size: 13px; font-weight: 600; transition: all 0.15s; }
+.navbar .nav-links .nav-btn:hover { color: #fff; background: rgba(255,255,255,0.16); }
+.navbar .nav-links .nav-btn.active { background: #f1c40f; color: #1a1a2e; border-color: #f1c40f; }
 .navbar .nav-right { margin-left: auto; font-size: 13px; opacity: 0.7; }
 
 .header { background: #f0f2f5; color: #1a1a1a; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
@@ -329,6 +528,8 @@ body { font-family: -apple-system, 'Segoe UI', Arial, sans-serif; background: #f
 .breadcrumb { margin-bottom: 16px; font-size: 14px; }
 .breadcrumb a { color: #4a6fa5; text-decoration: none; }
 .breadcrumb a:hover { text-decoration: underline; }
+.breadcrumb .nearby-btn, .breadcrumb .nearby-btn:visited { color: #fff !important; }
+.breadcrumb .nearby-btn:hover { text-decoration: none; }
 
 /* Series list */
 .series-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
@@ -354,15 +555,54 @@ body { font-family: -apple-system, 'Segoe UI', Arial, sans-serif; background: #f
 .photo-info { padding: 12px 16px; }
 .photo-name { font-size: 13px; color: #888; word-break: break-all; margin-bottom: 6px; }
 .photo-score { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+.debug-breakdown { display: none; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+body.debug-enabled .debug-breakdown { display: flex; }
+.debug-chip { display: inline-flex; gap: 4px; align-items: center; background: #eef3ff; color: #1f355f; border: 1px solid #d7e2ff;
+              border-radius: 999px; padding: 4px 9px; font-size: 12px; }
 .rescue-btn { display: inline-block; background: #3498db; color: #fff; border: none; padding: 8px 20px;
               border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none; }
 .rescue-btn:hover { background: #2980b9; }
 .rescue-btn.done { background: #2ecc71; cursor: default; }
 .fullscreen-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-                      background: rgba(0,0,0,0.9); z-index: 1000; cursor: pointer; justify-content: center; align-items: center; }
+                      background: rgba(0,0,0,0.92); z-index: 1000; justify-content: center; align-items: center; padding: 24px; }
 .fullscreen-overlay.active { display: flex; }
-.fullscreen-overlay img { max-width: 95%; max-height: 95%; object-fit: contain; }
+.lightbox-shell { width: min(1600px, 100%); height: min(94vh, 1120px); display: grid; grid-template-columns: minmax(0, 1fr) 300px;
+                  background: #0f1723; border-radius: 18px; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.45); }
+.lightbox-main { position: relative; display: flex; align-items: center; justify-content: center; background: #05080d; min-width: 0; }
+.lightbox-main img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.lightbox-close { position: absolute; top: 16px; right: 16px; width: 42px; height: 42px; border-radius: 50%; border: none;
+                  background: rgba(255,255,255,0.14); color: #fff; cursor: pointer; font-size: 24px; line-height: 1; }
+.lightbox-close:hover { background: rgba(255,255,255,0.24); }
+.lightbox-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 48px; height: 48px; border-radius: 50%; border: none;
+                background: rgba(255,255,255,0.12); color: #fff; cursor: pointer; font-size: 26px; line-height: 1; }
+.lightbox-nav:hover:not(:disabled) { background: rgba(255,255,255,0.22); }
+.lightbox-nav:disabled { opacity: 0.28; cursor: default; }
+.lightbox-nav.prev { left: 16px; }
+.lightbox-nav.next { right: 16px; }
+.lightbox-side { background: #121a26; color: #f6f8fb; padding: 24px 20px; overflow-y: auto; border-left: 1px solid rgba(255,255,255,0.08); }
+.lightbox-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; word-break: break-word; }
+.lightbox-subtitle { font-size: 13px; color: #aebacf; margin-bottom: 12px; line-height: 1.5; }
+.lightbox-counter { display: inline-block; background: rgba(255,255,255,0.08); border-radius: 999px; padding: 5px 10px;
+                    font-size: 12px; margin-bottom: 18px; }
+.lightbox-hint { font-size: 12px; color: #8b97aa; margin-top: 12px; line-height: 1.5; }
+.lightbox-debug-panel { display: none; }
+body.debug-enabled .lightbox-debug-panel { display: block; }
+.lightbox-debug-summary { display: grid; gap: 8px; margin-bottom: 16px; font-size: 13px; }
+.lightbox-debug-table { display: grid; gap: 8px; }
+.lightbox-debug-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center;
+                      background: rgba(255,255,255,0.05); border-radius: 10px; padding: 8px 10px; font-size: 13px; }
+.lightbox-debug-row .debug-label { color: #d9e2ef; }
+.lightbox-debug-row .debug-raw { color: #9fc2ff; font-variant-numeric: tabular-nums; }
+.lightbox-debug-row .debug-points { color: #f8d57f; font-weight: 700; font-variant-numeric: tabular-nums; }
+.lightbox-debug-empty { color: #8b97aa; font-size: 13px; }
 .rescued-badge { display: inline-block; background: #2ecc71; color: #fff; padding: 2px 10px; border-radius: 12px; font-size: 12px; margin-left: 8px; }
+.nearby-btn, .nearby-btn:visited { color: #fff !important; }
+
+@media (max-width: 1024px) {
+  .lightbox-shell { grid-template-columns: 1fr; height: auto; max-height: 92vh; }
+  .lightbox-main { min-height: 50vh; }
+  .lightbox-side { border-left: none; border-top: 1px solid rgba(255,255,255,0.08); }
+}
 
 /* Nearby browser */
 .nearby-btn { display: inline-block; background: #4a6fa5; color: #fff; border: none; padding: 8px 20px;
@@ -470,14 +710,120 @@ body { font-family: -apple-system, 'Segoe UI', Arial, sans-serif; background: #f
 """
 
 _JS = r"""
-function showFull(src, evt) {
-    if (evt && evt.target.type === 'checkbox') return;
-    var ov = document.getElementById('fullscreen');
-    ov.querySelector('img').src = src.replace('max_side=400', 'max_side=1600');
-    ov.classList.add('active');
+var lightboxState = { active: false, group: '', items: [], index: 0 };
+
+function getDebugMode() {
+    var stored = localStorage.getItem('kanatka_debug_score');
+    if (stored === null) return !!window.KANATKA_DEBUG_DEFAULT;
+    return stored === '1';
+}
+function applyDebugMode() {
+    var enabled = getDebugMode();
+    document.body.classList.toggle('debug-enabled', enabled);
+    var btn = document.getElementById('debug-toggle');
+    if (btn) {
+        btn.classList.toggle('active', enabled);
+        btn.textContent = enabled ? 'Debug score: ON' : 'Debug score: OFF';
+    }
+}
+function toggleDebugMode() {
+    localStorage.setItem('kanatka_debug_score', getDebugMode() ? '0' : '1');
+    applyDebugMode();
+}
+function refreshPage() {
+    location.reload();
+}
+function parseLightboxPayload(el) {
+    try {
+        return JSON.parse(el.getAttribute('data-lightbox-payload') || '{}');
+    } catch (e) {
+        return {};
+    }
+}
+function getLightboxItems(group) {
+    var nodes = document.querySelectorAll('.js-lightbox-trigger');
+    var items = [];
+    for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        if (node.getAttribute('data-lightbox-group') !== group) continue;
+        items.push({
+            index: parseInt(node.getAttribute('data-lightbox-index') || '0', 10),
+            payload: parseLightboxPayload(node)
+        });
+    }
+    items.sort(function(a, b) { return a.index - b.index; });
+    var result = [];
+    for (var j = 0; j < items.length; j++) result.push(items[j].payload);
+    return result;
+}
+function openLightboxFromElement(el, evt) {
+    if (evt && evt.target && evt.target.type === 'checkbox') return;
+    if (evt) {
+        evt.preventDefault();
+        evt.stopPropagation();
+    }
+    var group = el.getAttribute('data-lightbox-group') || 'default';
+    lightboxState.items = getLightboxItems(group);
+    lightboxState.group = group;
+    lightboxState.index = parseInt(el.getAttribute('data-lightbox-index') || '0', 10);
+    lightboxState.active = true;
+    renderLightbox();
+}
+function renderLightbox() {
+    var overlay = document.getElementById('fullscreen');
+    if (!overlay || !lightboxState.active || !lightboxState.items.length) return;
+    var item = lightboxState.items[lightboxState.index] || {};
+    overlay.querySelector('.lightbox-image').src = item.src || '';
+    overlay.querySelector('.lightbox-title').textContent = item.title || '';
+    overlay.querySelector('.lightbox-subtitle').textContent = item.subtitle || '';
+    overlay.querySelector('.lightbox-counter').textContent =
+        (lightboxState.index + 1) + ' / ' + lightboxState.items.length;
+    overlay.querySelector('.lightbox-debug-panel').innerHTML = item.debug_html || '<div class="lightbox-debug-empty">Нет debug-данных.</div>';
+    overlay.querySelector('.lightbox-nav.prev').disabled = lightboxState.index <= 0;
+    overlay.querySelector('.lightbox-nav.next').disabled = lightboxState.index >= lightboxState.items.length - 1;
+    overlay.classList.add('active');
+}
+function closeLightbox(evt) {
+    if (evt && evt.target !== evt.currentTarget) return;
+    lightboxState.active = false;
+    var overlay = document.getElementById('fullscreen');
+    if (overlay) overlay.classList.remove('active');
+}
+function moveLightbox(delta) {
+    if (!lightboxState.active) return;
+    var next = lightboxState.index + delta;
+    if (next < 0 || next >= lightboxState.items.length) return;
+    lightboxState.index = next;
+    renderLightbox();
 }
 document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') document.getElementById('fullscreen').classList.remove('active');
+    if (!lightboxState.active) return;
+    if (e.key === 'Escape') closeLightbox();
+    if (e.key === 'ArrowLeft') moveLightbox(-1);
+    if (e.key === 'ArrowRight') moveLightbox(1);
+});
+document.addEventListener('DOMContentLoaded', function() {
+    applyDebugMode();
+    if ((window.KANATKA_PAGE_KEY === 'series-list' || window.KANATKA_PAGE_KEY === 'sheets') && window.KANATKA_MONITOR_ACTIVE) {
+        window.setInterval(function() {
+            fetch('/api/monitor', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({action: 'status'}),
+                credentials: 'same-origin'
+            }).then(function(resp) {
+                return resp.json().catch(function() { return {}; });
+            }).then(function(data) {
+                if (!data || data.error) return;
+                var changed = (
+                    data.active !== window.KANATKA_MONITOR_ACTIVE ||
+                    data.series_processed !== window.KANATKA_MONITOR_SERIES ||
+                    data.last_activity !== window.KANATKA_MONITOR_LAST
+                );
+                if (changed) location.reload();
+            }).catch(function() {});
+        }, 3000);
+    }
 });
 
 function updateBatchCount() {
@@ -581,7 +927,20 @@ function toggleMonitor(action) {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({action: action}),
         credentials: 'same-origin'
-    }).then(function() { location.reload(); })
+    }).then(function(resp) {
+        return resp.json().catch(function() { return {}; }).then(function(data) {
+            if (!resp.ok) {
+                throw new Error(data.error || ('HTTP ' + resp.status));
+            }
+            if (data.error) {
+                throw new Error(data.error);
+            }
+            if (action === 'start' && !data.active) {
+                throw new Error(data.error || 'Мониторинг не запустился');
+            }
+            location.reload();
+        });
+    })
     .catch(function(e) { alert('Ошибка: ' + e.message); });
 }
 
@@ -678,17 +1037,11 @@ function runCleanup() {
     })
     .catch(function(e) { alert('Ошибка: ' + e.message); });
 }
-
-function openFullscreen(src) {
-    var ov = document.getElementById('fullscreen');
-    ov.querySelector('img').src = src;
-    ov.classList.add('active');
-}
 """
 
 
 def _page(title: str, body: str, stats: str = "", active_nav: str = "series",
-          show_view_switcher: bool = False) -> str:
+          show_view_switcher: bool = False, page_key: str = "series") -> str:
     def nav_cls(name: str) -> str:
         return "active" if name == active_nav else ""
 
@@ -726,6 +1079,10 @@ def _page(title: str, body: str, stats: str = "", active_nav: str = "series",
     # Test mode / autoprint indicator
     _cfg = getattr(SeriesBrowserHandler, "config", None) or {}
     _print_cfg = _cfg.get("print", {})
+    _debug_default = "true" if _cfg.get("output", {}).get("show_score_badge", True) else "false"
+    _monitor_active = "true" if mon["active"] else "false"
+    _monitor_series = int(mon.get("series_processed", 0))
+    _monitor_last = json.dumps(mon.get("last_activity", ""), ensure_ascii=False)
     if _print_cfg.get("test_mode", False):
         monitor_html += (
             '<span style="margin-left:12px; font-size:13px; color:#f1c40f; '
@@ -751,6 +1108,8 @@ def _page(title: str, body: str, stats: str = "", active_nav: str = "series",
         f'    <a href="/" class="{nav_cls("series")}">Серии</a>\n'
         f'    <a href="/sheets" class="{nav_cls("sheets")}">&#128196; Листы</a>\n'
         f'    <a href="/settings" class="{nav_cls("settings")}">&#9881; Настройки</a>\n'
+        '    <button class="nav-btn" onclick="refreshPage(); return false;">Обновить</button>\n'
+        '    <button id="debug-toggle" class="nav-btn" onclick="toggleDebugMode(); return false;">Debug score: OFF</button>\n'
         '    <a href="#" onclick="openCleanup(); return false;" style="color:#e74c3c">&#128465; Очистка</a>\n'
         '  </div>\n'
         f'  {view_switcher_html}'
@@ -762,7 +1121,8 @@ def _page(title: str, body: str, stats: str = "", active_nav: str = "series",
         ' background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center">'
         '<div style="background:#fff; border-radius:16px; padding:28px 32px; max-width:420px; width:90%">'
         '<h3 style="margin-top:0">&#128465; Очистка рабочих папок</h3>'
-        '<p style="color:#666; font-size:13px; margin-bottom:16px">Выберите папки для очистки. Файлы будут удалены безвозвратно.</p>'
+        '<p style="color:#666; font-size:13px; margin-bottom:16px">Выберите папки для очистки. Файлы будут удалены безвозвратно. '
+        'Карточки на вкладке «Серии» строятся по отчётам из logs, поэтому без последнего пункта история серий останется видимой.</p>'
         '<div style="display:flex; flex-direction:column; gap:10px">'
         '<label style="cursor:pointer"><input type="checkbox" name="incoming"> Входящие фото (ожидают обработки)</label>'
         '<label style="cursor:pointer"><input type="checkbox" name="selected"> Лучшие фото (отобранные)</label>'
@@ -771,7 +1131,7 @@ def _page(title: str, body: str, stats: str = "", active_nav: str = "series",
         '<label style="cursor:pointer"><input type="checkbox" name="ambiguous"> Спорные серии</label>'
         '<label style="cursor:pointer"><input type="checkbox" name="sheets"> Печатные листы</label>'
         '<label style="cursor:pointer"><input type="checkbox" name="archive"> Архив обработанных</label>'
-        '<label style="cursor:pointer"><input type="checkbox" name="logs"> Отчёты серий, логи, аннотации</label>'
+        '<label style="cursor:pointer"><input type="checkbox" name="logs"> Отчёты серий, логи, аннотации (убирает карточки серий)</label>'
         '<hr style="margin:8px 0">'
         '<label style="cursor:pointer; color:#e74c3c; font-weight:700"><input type="checkbox" onchange="toggleCleanupAll(this)"> Выбрать всё</label>'
         '</div>'
@@ -779,7 +1139,25 @@ def _page(title: str, body: str, stats: str = "", active_nav: str = "series",
         '<button onclick="closeCleanup()" style="padding:8px 20px; border:1px solid #ddd; border-radius:8px; background:#fff; cursor:pointer">Отмена</button>'
         '<button onclick="runCleanup()" style="padding:8px 20px; border:none; border-radius:8px; background:#e74c3c; color:#fff; cursor:pointer; font-weight:600">Удалить</button>'
         '</div></div></div>\n'
-        '<div id="fullscreen" class="fullscreen-overlay" onclick="this.classList.remove(\'active\')"><img src=""></div>\n'
+        '<div id="fullscreen" class="fullscreen-overlay" onclick="closeLightbox(event)">'
+        '<div class="lightbox-shell">'
+        '<div class="lightbox-main">'
+        '<button class="lightbox-close" onclick="closeLightbox()">&times;</button>'
+        '<button class="lightbox-nav prev" onclick="moveLightbox(-1)">&lsaquo;</button>'
+        '<img class="lightbox-image" src="" alt="">'
+        '<button class="lightbox-nav next" onclick="moveLightbox(1)">&rsaquo;</button>'
+        '</div>'
+        '<aside class="lightbox-side">'
+        '<div class="lightbox-title"></div>'
+        '<div class="lightbox-subtitle"></div>'
+        '<div class="lightbox-counter"></div>'
+        '<div class="lightbox-debug-panel"></div>'
+        '<div class="lightbox-hint">Esc — закрыть. Стрелки влево/вправо — перейти к соседнему кадру в текущей серии.</div>'
+        '</aside>'
+        '</div></div>\n'
+        f'<script>window.KANATKA_PAGE_KEY = {json.dumps(page_key, ensure_ascii=False)};</script>\n'
+        f'<script>window.KANATKA_MONITOR_ACTIVE = {_monitor_active}; window.KANATKA_MONITOR_SERIES = {_monitor_series}; window.KANATKA_MONITOR_LAST = {_monitor_last};</script>\n'
+        f'<script>window.KANATKA_DEBUG_DEFAULT = {_debug_default};</script>\n'
         f'<script>{_JS}</script>\n'
         '</body></html>'
     )
@@ -822,7 +1200,7 @@ def _detect_label(present: bool, fallback: bool) -> str:
 _SERIES_PER_PAGE = 20
 
 
-def _render_series_card(series: dict) -> str:
+def _render_series_card(series: dict, config: dict, history_mode: bool = False) -> str:
     """Render a single series card HTML."""
     name = series.get("series", "?")
     status = series.get("status", "unknown")
@@ -843,44 +1221,62 @@ def _render_series_card(series: dict) -> str:
     score_cls = "score-big" if score_val > 0 else "score-big score-zero"
     score_html = f'<span class="{score_cls}">{score_val:.0f}</span>' if score_val else ""
 
-    thumb_src = ""
-    if photos:
-        first_path = photos[0].get("file_path", "")
-        thumb_src = f'/photo?path={quote(first_path, safe="")}&amp;max_side=400'
+    thumb_path = _resolve_series_card_thumb(series, config)
+    if thumb_path:
+        thumb_html = (
+            f'<img class="series-thumb" src="/photo?path={quote(str(thumb_path), safe="")}&amp;max_side=400" '
+            f'alt="{name}" loading="lazy" onerror="this.style.display=\'none\'">'
+        )
+    else:
+        thumb_html = (
+            '<div class="series-thumb" style="display:flex; align-items:center; justify-content:center; '
+            'background:#eef1f5; color:#6b7280; font-weight:600; min-height:220px">Файлы очищены</div>'
+        )
+
+    action_html = ""
+    if not history_mode:
+        action_html = (
+            f'<a href="/nearby/{name}" class="nearby-btn" style="font-size:12px; padding:5px 12px">Рядом</a>'
+            + (f'<button onclick="confirmAmbiguous(\'{name}\')" class="nearby-btn" '
+               f'style="font-size:12px; padding:5px 12px; background:#27ae60; color:#fff; border:none; cursor:pointer">'
+               f'Подтвердить</button>'
+               if status == "ambiguous_manual_review" else "")
+        )
 
     return (
         '<div class="series-card">'
         f'<a href="/series/{name}">'
-        f'<img class="series-thumb" src="{thumb_src}" alt="{name}" loading="lazy"'
-        " onerror=\"this.style.display='none'\">"
+        f'{thumb_html}'
         '<div class="series-info">'
         f'<div class="series-name">{name} {score_html}</div>'
-        f'<div class="series-meta">{badge} &middot; {photo_count} фото</div>'
+        f'<div class="series-meta">{badge} &middot; {photo_count} фото'
+        + (' &middot; История' if history_mode else '')
+        + '</div>'
         '</div></a>'
         f'<div style="padding:0 16px 12px; display:flex; gap:6px">'
-        f'<a href="/nearby/{name}" class="nearby-btn" style="font-size:12px; padding:5px 12px">'
-        'Рядом</a>'
-        + (f'<button onclick="confirmAmbiguous(\'{name}\')" class="nearby-btn" '
-           f'style="font-size:12px; padding:5px 12px; background:#27ae60; color:#fff; border:none; cursor:pointer">'
-           f'Подтвердить</button>'
-           if status == "ambiguous_manual_review" else "")
+        + action_html
         + '</div>'
         '</div>'
     )
 
 
-def _render_series_list(all_series: list[dict], page: int = 1, filter_status: str = "") -> str:
-    selected_count = sum(1 for s in all_series if s.get("status") == "selected")
-    empty_count = sum(1 for s in all_series if s.get("status") == "discarded_empty")
-    ambiguous_count = sum(1 for s in all_series if s.get("status") == "ambiguous_manual_review")
-    total = len(all_series)
-    stats = f"Всего: {total} | Выбрано: {selected_count} | Спорных: {ambiguous_count} | Пустых: {empty_count}"
+def _render_series_list(all_series: list[dict], config: dict, page: int = 1, filter_status: str = "") -> str:
+    live_series, history_series = _series_visibility(all_series, config)
+    selected_count = sum(1 for s in live_series if s.get("status") == "selected")
+    empty_count = sum(1 for s in live_series if s.get("status") == "discarded_empty")
+    ambiguous_count = sum(1 for s in live_series if s.get("status") == "ambiguous_manual_review")
+    stats = (
+        f"Рабочие: {len(live_series)} | История: {len(history_series)} | "
+        f"Выбрано: {selected_count} | Спорных: {ambiguous_count} | Пустых: {empty_count}"
+    )
 
-    # Filter
+    history_mode = filter_status == "history"
     if filter_status == "ambiguous":
-        display_series = [s for s in all_series if s.get("status") == "ambiguous_manual_review"]
+        display_series = [s for s in live_series if s.get("status") == "ambiguous_manual_review"]
+    elif history_mode:
+        display_series = history_series
     else:
-        display_series = all_series
+        display_series = live_series
 
     # Pagination
     filtered_total = len(display_series)
@@ -890,18 +1286,21 @@ def _render_series_list(all_series: list[dict], page: int = 1, filter_status: st
     end = min(start + _SERIES_PER_PAGE, filtered_total)
     page_series = display_series[start:end]
 
-    cards = [_render_series_card(s) for s in page_series]
+    cards = [_render_series_card(s, config, history_mode=history_mode) for s in page_series]
 
     # Filter tabs
     filter_param = f"&filter={filter_status}" if filter_status else ""
-    all_cls = "" if filter_status else "active"
+    live_cls = "" if filter_status else "active"
     amb_cls = "active" if filter_status == "ambiguous" else ""
+    history_cls = "active" if history_mode else ""
     filter_tabs = (
         '<div style="margin-bottom:12px; display:flex; gap:8px">'
-        f'<a href="/" class="page-btn {all_cls}" style="text-decoration:none">Все ({total})</a>'
+        f'<a href="/" class="page-btn {live_cls}" style="text-decoration:none">Рабочие ({len(live_series)})</a>'
         f'<a href="/?filter=ambiguous" class="page-btn {amb_cls}" style="text-decoration:none; '
         f'color:{("#f39c12" if ambiguous_count else "#999")}">'
         f'&#9888; Спорные ({ambiguous_count})</a>'
+        f'<a href="/?filter=history" class="page-btn {history_cls}" style="text-decoration:none">'
+        f'История ({len(history_series)})</a>'
         '</div>'
     )
 
@@ -962,72 +1361,121 @@ def _render_series_list(all_series: list[dict], page: int = 1, filter_status: st
             '</div>'
         )
 
+    empty_state = ""
+    if not cards:
+        empty_label = "История пуста." if history_mode else "В рабочем окне сейчас нет доступных серий."
+        empty_hint = (
+            "Здесь собраны только серии, для которых уже очищены рабочие файлы."
+            if history_mode else
+            "Очищенные серии вынесены из основного окна и доступны отдельно во вкладке «История»."
+        )
+        empty_state = (
+            '<div style="background:#fff; border-radius:14px; padding:22px 24px; color:#55606f; '
+            'box-shadow:0 2px 8px rgba(0,0,0,0.05); margin-bottom:16px">'
+            f'<div style="font-weight:700; color:#22313f; margin-bottom:6px">{empty_label}</div>'
+            f'<div style="font-size:14px">{empty_hint}</div>'
+            '</div>'
+        )
+
     body = (
         monitor_bar
         + filter_tabs
+        + empty_state
         + '<div class="series-grid view-medium">'
         + "".join(cards)
         + '</div>'
         + pagination
     )
-    return _page("Kanatka — Серии", body, stats, show_view_switcher=True)
+    return _page("Kanatka — Серии", body, stats, show_view_switcher=True, page_key="series-list")
 
 
-def _render_series_detail(series: dict, selected_dir: Path) -> str:
+def _render_series_detail(series: dict, selected_dir: Path, config: dict) -> str:
     name = series.get("series", "?")
     photos = series.get("photos", [])
     selected_file = series.get("selected_file", "")
     existing_selected = {p.name for p in selected_dir.glob("*.jpg")}
+    live_series = _series_has_live_assets(series, config)
 
     breadcrumb = (
         '<div class="breadcrumb">'
         '<a href="/">&larr; Все серии</a> / ' + name
-        + f' <a href="/nearby/{name}" class="nearby-btn">Посмотреть рядом</a>'
+        + (f' <a href="/nearby/{name}" class="nearby-btn">Посмотреть рядом</a>' if live_series else "")
         + '</div>'
     )
 
     cards = []
-    for photo in photos:
+    group_name = f"series-{name}"
+    for index, photo in enumerate(photos):
         fname = photo.get("file_name", "?")
         fpath = photo.get("file_path", "")
         score = photo.get("score", 0)
         present = photo.get("subject_present", False)
         fallback = photo.get("person_fallback", False)
-
-        thumb_src = f'/photo?path={quote(fpath, safe="")}&amp;max_side=400'
-        full_src = f'/photo?path={quote(fpath, safe="")}&amp;max_side=1600'
+        actual_path = _find_existing_photo_for_series(photo, name, config, selected_file=selected_file)
+        rescue_source = _find_rescue_source(photo, config)
 
         score_val = score if isinstance(score, (int, float)) else 0
         detect_info = _detect_label(present, fallback)
+        inline_debug_html = _build_inline_debug_html(photo)
 
         rescue_name = f"{name}_{fname}"
         already_rescued = rescue_name in existing_selected or selected_file == rescue_name
         if already_rescued:
             rescue_html = '<span class="rescued-badge">Уже выбрано</span>'
+        elif rescue_source is None:
+            rescue_html = '<span class="rescued-badge" style="background:#bdc3c7">Исходник очищен</span>'
         else:
             form_id = f"rescue_{fname.replace('.', '_')}"
             rescue_html = (
                 f'<form id="{form_id}" method="POST" action="/rescue" style="display:inline">'
-                f'<input type="hidden" name="path" value="{fpath}">'
+                f'<input type="hidden" name="path" value="{rescue_source}">'
                 f'<input type="hidden" name="series" value="{name}">'
                 f'<input type="hidden" name="file_name" value="{fname}">'
                 f'<button type="button" class="rescue-btn" onclick="confirmRescue(\'{form_id}\', \'{fname}\')">Спасти фото</button>'
                 '</form>'
             )
 
+        if actual_path is not None:
+            thumb_src = f'/photo?path={quote(str(actual_path), safe="")}&amp;max_side=400'
+            full_src = f'/photo?path={quote(str(actual_path), safe="")}&amp;max_side=2200'
+            payload = _build_lightbox_payload_attr(
+                full_src,
+                fname,
+                f"{name} · {detect_info} · Score {score_val:.1f}",
+                _build_lightbox_debug_html(photo),
+            )
+            thumb_html = (
+                f'<img class="photo-thumb js-lightbox-trigger" src="{thumb_src}" alt="{fname}" loading="lazy"'
+                f' data-lightbox-group="{group_name}" data-lightbox-index="{index}"'
+                f' data-lightbox-payload="{payload}"'
+                f' onclick="openLightboxFromElement(this, event)"'
+                " onerror=\"this.style.display='none'\">"
+            )
+        else:
+            thumb_html = (
+                '<div class="photo-thumb" style="display:flex; align-items:center; justify-content:center; '
+                'background:#eef1f5; color:#6b7280; font-weight:600; min-height:220px">Файл очищен</div>'
+            )
+
         cards.append(
             '<div class="photo-card">'
-            f'<img class="photo-thumb" src="{thumb_src}" alt="{fname}" loading="lazy"'
-            f" onclick=\"showFull('{full_src}', event)\""
-            " onerror=\"this.style.display='none'\">"
+            f'{thumb_html}'
             '<div class="photo-info">'
             f'<div class="photo-name">{fname}</div>'
             f'<div class="photo-score">Score: {_score_span(score_val)} &middot; {detect_info}</div>'
+            f'{inline_debug_html}'
             f'{rescue_html}'
             '</div></div>'
         )
 
     body = breadcrumb + f'<h2 style="margin-bottom:16px">{name} — {len(photos)} фото</h2>'
+    if not live_series:
+        body += (
+            '<div style="background:#fff4db; color:#7d5b00; border:1px solid #f0d28a; border-radius:12px; '
+            'padding:14px 16px; margin-bottom:16px">'
+            '<b>История серии.</b> Рабочие файлы уже очищены, поэтому просмотр и rescue ограничены.'
+            '</div>'
+        )
     body += '<div class="photo-grid">' + "".join(cards) + '</div>'
     return _page(f"Kanatka — {name}", body)
 
@@ -1036,6 +1484,7 @@ def _render_nearby(
     center_series: dict,
     all_series: list[dict],
     selected_dir: Path,
+    config: dict,
     radius: int = 3,
 ) -> str:
     """Render the temporal browser showing photos from neighboring series.
@@ -1105,35 +1554,65 @@ def _render_nearby(
         )
 
         cards = []
-        for photo in photos:
+        group_name = f"nearby-{name}"
+        for index, photo in enumerate(photos):
             fname = photo.get("file_name", "?")
             fpath = photo.get("file_path", "")
             score = photo.get("score", 0)
             present = photo.get("subject_present", False)
             fallback = photo.get("person_fallback", False)
-
-            thumb_src = f'/photo?path={quote(fpath, safe="")}&amp;max_side=400'
-            full_src = f'/photo?path={quote(fpath, safe="")}&amp;max_side=1600'
+            actual_path = _find_existing_photo_for_series(photo, name, config, selected_file=series.get("selected_file", ""))
+            rescue_source = _find_rescue_source(photo, config)
 
             score_val = score if isinstance(score, (int, float)) else 0
             detect_info = _detect_label(present, fallback)
+            inline_debug_html = _build_inline_debug_html(photo)
 
             rescue_name = f"{name}_{fname}"
             already = rescue_name in existing_selected
             already_html = ' <span class="rescued-badge">Уже</span>' if already else ""
 
+            if actual_path is not None:
+                thumb_src = f'/photo?path={quote(str(actual_path), safe="")}&amp;max_side=400'
+                full_src = f'/photo?path={quote(str(actual_path), safe="")}&amp;max_side=2200'
+                payload = _build_lightbox_payload_attr(
+                    full_src,
+                    fname,
+                    f"{name} · {detect_info} · Score {score_val:.1f}",
+                    _build_lightbox_debug_html(photo),
+                )
+                thumb_html = (
+                    f'<img class="photo-thumb js-lightbox-trigger" src="{thumb_src}" alt="{fname}" loading="lazy"'
+                    f' data-lightbox-group="{group_name}" data-lightbox-index="{index}"'
+                    f' data-lightbox-payload="{payload}"'
+                    f' onclick="openLightboxFromElement(this, event)"'
+                    " onerror=\"this.style.display='none'\">"
+                )
+            else:
+                thumb_html = (
+                    '<div class="photo-thumb" style="display:flex; align-items:center; justify-content:center; '
+                    'background:#eef1f5; color:#6b7280; font-weight:600; min-height:220px">Файл очищен</div>'
+                )
+
+            checkbox_html = ""
+            if rescue_source is not None and not already:
+                checkbox_html = (
+                    f'<input type="checkbox" class="photo-checkbox"'
+                    f' data-path="{rescue_source}" data-series="{name}"'
+                    ' onchange="toggleCard(this)">'
+                )
+
             cards.append(
                 '<div class="photo-card">'
-                f'<input type="checkbox" class="photo-checkbox"'
-                f' data-path="{fpath}" data-series="{name}"'
-                ' onchange="toggleCard(this)">'
-                f'<img class="photo-thumb" src="{thumb_src}" alt="{fname}" loading="lazy"'
-                f" onclick=\"showFull('{full_src}', event)\""
-                " onerror=\"this.style.display='none'\">"
-                '<div class="photo-info">'
-                f'<div class="photo-name">{fname}</div>'
-                f'<div class="photo-score">Score: {_score_span(score_val)} &middot; {detect_info}{already_html}</div>'
-                '</div></div>'
+                + f'{checkbox_html}'
+                + f'{thumb_html}'
+                + '<div class="photo-info">'
+                + f'<div class="photo-name">{fname}</div>'
+                + f'<div class="photo-score">Score: {_score_span(score_val)} &middot; {detect_info}{already_html}</div>'
+                + f'{inline_debug_html}'
+                + ('<div style="margin-top:8px; color:#7b8794; font-size:12px">Исходник очищен, отправка недоступна.</div>'
+                   if rescue_source is None and not already else '')
+                + '</div></div>'
             )
 
         body_parts.append('<div class="photo-grid">' + "".join(cards) + '</div>')
@@ -1166,13 +1645,13 @@ def _render_nearby(
 _SETTINGS_SCHEMA: list[tuple[str, str, list[tuple]]] = [
     (
         "Детекция серий",
-        "Как программа группирует кадры в серии по времени съёмки.",
+        "Как программа режет непрерывный поток входящих файлов на отдельные серии.",
         [
-            ("series_detection", "max_gap_seconds", "Макс. пауза между кадрами",
-             "Если между двумя кадрами прошло меньше этого времени — они в одной серии.",
+            ("series_detection", "max_gap_seconds", "Макс. разрыв внутри серии",
+             "Если соседние кадры отличаются по времени создания не больше этого значения — это одна серия.",
              "range", {"min": 0.1, "max": 10, "step": 0.1}),
-            ("series_detection", "cooldown_seconds", "Пауза между сериями",
-             "Минимальное время между последним кадром одной серии и первым кадром следующей.",
+            ("series_detection", "cooldown_seconds", "Ожидание тишины перед разбором",
+             "Сколько ждать после последнего нового файла, прежде чем разбирать накопившуюся очередь.",
              "range", {"min": 0.5, "max": 30, "step": 0.1}),
         ],
     ),
@@ -1258,6 +1737,18 @@ _SETTINGS_SCHEMA: list[tuple[str, str, list[tuple]]] = [
             ("scoring_weights", "smile_bonus", "Бонус за улыбку",
              "Вес компонента: слабое предпочтение позитивному выражению. Не должен побеждать читаемость.",
              "range", {"min": 0, "max": 10, "step": 1}),
+        ],
+    ),
+    (
+        "Спорные серии",
+        "Порог, при котором автоматический выбор считается неуверенным и серия помечается для ручной проверки.",
+        [
+            ("decision", "manual_review_enabled", "Включить manual review",
+             "Если выключить, программа не будет помечать близкие по score серии как спорные.",
+             "checkbox", {}),
+            ("decision", "delta_score", "Мин. разница score",
+             "Если разница между лучшим и вторым кадром меньше этого порога, серия будет отмечена как спорная.",
+             "range", {"min": 0, "max": 25, "step": 0.5}),
         ],
     ),
     (
@@ -1392,19 +1883,26 @@ def _render_sheets_gallery(config: dict) -> str:
 
     if not sheet_files:
         body = '<h2 style="text-align:center; color:#999; margin-top:60px">Нет собранных листов</h2>'
-        return _page("Kanatka — Листы", body, active_nav="sheets")
+        return _page("Kanatka — Листы", body, active_nav="sheets", page_key="sheets")
 
     cards = []
-    for sf in sheet_files:
+    for index, sf in enumerate(sheet_files):
         mtime = sf.stat().st_mtime
         from datetime import datetime as _dt
         time_str = _dt.fromtimestamp(mtime).strftime("%d.%m.%Y %H:%M")
         size_kb = sf.stat().st_size // 1024
         thumb_url = f"/photo?path={sf.resolve()}&max_side=600"
         full_url = f"/photo?path={sf.resolve()}&max_side=3600"
+        payload = _build_lightbox_payload_attr(
+            full_url,
+            sf.name,
+            f"{time_str} · {size_kb} KB",
+        )
         card = (
             '<div class="sheet-card">'
-            f'<img src="{thumb_url}" onclick="openFullscreen(\'{full_url}\')" '
+            f'<img src="{thumb_url}" class="js-lightbox-trigger" '
+            f'data-lightbox-group="sheets-gallery" data-lightbox-index="{index}" '
+            f'data-lightbox-payload="{payload}" onclick="openLightboxFromElement(this, event)" '
             f'style="cursor:pointer; width:100%; border-radius:8px">'
             f'<div style="margin-top:6px; font-size:13px; color:#666">'
             f'{sf.name}<br>{time_str} &middot; {size_kb} KB</div>'
@@ -1437,12 +1935,15 @@ function printSheet(name) {
         f'<h2>Собранные листы '
         f'<span style="font-size:14px; color:{mode_color}; font-weight:700">{mode_label}</span>'
         f'</h2>'
+        '<p style="margin-top:0; color:#666; font-size:14px">'
+        'Клик по превью открывает лист в полном размере. Так удобнее проверять score overlay и финальную компоновку.'
+        '</p>'
         f'<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:16px">'
         + "".join(cards)
         + '</div>'
         f'<script>{js}</script>'
     )
-    return _page("Kanatka — Листы", body, active_nav="sheets")
+    return _page("Kanatka — Листы", body, active_nav="sheets", page_key="sheets")
 
 
 def _render_settings(config: dict) -> str:
@@ -1631,6 +2132,8 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
     def _send_html(self, html: str, status: int = 200) -> None:
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
         encoded = html.encode("utf-8")
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
@@ -1640,7 +2143,8 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "image/jpeg")
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "public, max-age=3600")
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
         self.end_headers()
         self.wfile.write(data)
 
@@ -1858,7 +2362,7 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
             series = self._get_series()
             page = int(params.get("page", ["1"])[0])
             filter_status = params.get("filter", [""])[0]
-            html = _render_series_list(series, page=page, filter_status=filter_status)
+            html = _render_series_list(series, self.config, page=page, filter_status=filter_status)
             self._send_html(html)
 
         elif path.startswith("/series/"):
@@ -1867,7 +2371,7 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
             found = next((s for s in series if s.get("series") == series_name), None)
             if found:
                 selected_dir = Path(self.config["paths"]["output_selected"])
-                html = _render_series_detail(found, selected_dir)
+                html = _render_series_detail(found, selected_dir, self.config)
                 self._send_html(html)
             else:
                 self._send_html("<h1>Серия не найдена</h1>", 404)
@@ -1878,7 +2382,7 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
             found = next((s for s in series if s.get("series") == series_name), None)
             if found:
                 selected_dir = Path(self.config["paths"]["output_selected"])
-                html = _render_nearby(found, series, selected_dir)
+                html = _render_nearby(found, series, selected_dir, self.config)
                 self._send_html(html)
             else:
                 self._send_html("<h1>Серия не найдена</h1>", 404)
@@ -1918,12 +2422,7 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
                 return
             file_path = unquote(file_path)
             real_path = Path(file_path)
-            if not real_path.exists():
-                inbox = Path(self.config["paths"]["test_photos_folder"])
-                if not inbox.is_absolute():
-                    inbox = Path.cwd() / inbox
-                real_path = inbox / real_path.name
-            if real_path.exists() and real_path.suffix.lower() in {".jpg", ".jpeg"}:
+            if real_path.exists() and real_path.suffix.lower() in {".jpg", ".jpeg", ".png"}:
                 try:
                     data = _thumb_bytes(real_path, max_side)
                     self._send_jpeg(data)
@@ -2018,15 +2517,12 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
             # Single photo rescue (from series detail page)
             file_path = params.get("path", [""])[0]
             series_name = params.get("series", [""])[0]
+            file_name = params.get("file_name", [""])[0]
 
             if file_path and series_name:
-                source = Path(file_path)
-                if not source.exists():
-                    inbox = Path(self.config["paths"]["test_photos_folder"])
-                    if not inbox.is_absolute():
-                        inbox = Path.cwd() / inbox
-                    source = inbox / source.name
-                if source.exists():
+                input_folder = _resolve_runtime_path(self.config, "input_folder")
+                source = _find_photo_path(file_path, input_folder, file_name)
+                if source is not None:
                     selected_dir = Path(self.config["paths"]["output_selected"])
                     dest = rescue_photo(source, selected_dir, series_name)
                     _sync_rescued_to_network([dest], self.config)

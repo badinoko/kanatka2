@@ -2,7 +2,7 @@
 
 Основной рабочий регламент и технический справочник для репозитория `kanatka2`.
 
-Последнее обновление: 2026-03-15.
+Последнее обновление: 2026-03-16.
 
 ---
 
@@ -54,7 +54,7 @@
 
 `kanatka2` — коммерческая программа автоматического отбора лучших фотографий с горнолыжной канатной дороги.
 
-**Сценарий:** Камера снимает проезжающих лыжников на кресельной канатке. Программа группирует кадры в серии по времени, отбрасывает пустые кресла, выбирает лучшее фото в каждой серии, собирает печатные листы (сетка 2x4) и отправляет в типографию по локальной сети.
+**Сценарий:** Камера снимает проезжающих лыжников на кресельной канатке. Программа группирует кадры в серии по времени создания файла, отбрасывает пустые кресла, выбирает лучшее фото в каждой серии, собирает печатные листы (сетка 2x4) и отправляет в типографию по локальной сети.
 
 ### Архитектура
 
@@ -83,7 +83,7 @@
 - Quality gate: pass/weak/fail. Fallback-кадры ограничены потолком 45.
 - Детекция: MediaPipe face → Haar upper body fallback.
 - Тестовый прогон: 22/25 серий selected (88%).
-- Тесты: 45 тестов, 11 файлов.
+- Тесты: 52 теста, 12 файлов.
 - Веб-интерфейс на порту 8787.
 
 ---
@@ -105,7 +105,7 @@ kanatka2/
 │   ├── main.py            # CLI entry point (argparse)
 │   ├── gui.py             # Tkinter launcher
 │   ├── series_browser.py  # Веб-интерфейс (HTTP-сервер, ~1500 строк)
-│   ├── watcher.py         # Мониторинг папки INBOX (watchdog)
+│   ├── watcher.py         # Мониторинг входящей папки (watchdog)
 │   ├── analyzer.py        # Анализ одного фото (детекция + метрики)
 │   ├── face_utils.py      # MediaPipe + Haar cascade детекция
 │   ├── scorer.py          # Расчёт score (7 компонентов ranking)
@@ -133,7 +133,8 @@ kanatka2/
 │   ├── test_scorer_logic.py
 │   ├── test_selector_series_fallback.py
 │   ├── test_series_browser.py
-│   └── test_sheet_metadata_fallback.py
+│   ├── test_sheet_metadata_fallback.py
+│   └── test_watcher_grouping.py
 │
 ├── models/                # ML-модели
 │   ├── face_landmarker.task    # MediaPipe face landmarker
@@ -204,7 +205,7 @@ kanatka2/
   - `POST /api/settings` — сохранение настроек (требует auth).
   - `POST /api/auth` — вход по паролю.
   - `POST /api/change-password` — смена пароля.
-  - `POST /api/monitor` — start/stop/status мониторинга INBOX.
+  - `POST /api/monitor` — start/stop/status мониторинга входящей папки.
   - `POST /api/rescue` — «спасти» фото.
   - `POST /api/batch-rescue` — batch-rescue нескольких фото.
   - `POST /api/export-zip` — ZIP-экспорт.
@@ -213,13 +214,13 @@ kanatka2/
   - Первый вход: подсказка о дефолтном пароле, редирект на смену пароля.
   - Пагинация: 20 серий на страницу.
   - Переключатель размера карточек (крупные/средние/мелкие), сохраняется в localStorage.
-  - Мониторинг INBOX: кнопка Start/Stop, индикатор в навбаре (зелёная точка).
+  - Мониторинг входящей папки: кнопка Start/Stop, индикатор в навбаре (зелёная точка).
   - Score: 5-звёздочный рейтинг + подписи (Отлично/Хорошо/Средне/Слабо/Плохо).
 - **Внутренние классы:**
   - `_MonitorState` — глобальное состояние мониторинга (observer, thread, счётчик серий).
 
 ### `watcher.py` — Мониторинг папки (~156 строк)
-- `group_files_by_time()` — группировка файлов в серии по mtime.
+- `group_files_by_time()` — группировка файлов в серии по времени создания файла.
 - `process_folder()` — обработка целой папки: группировка → анализ → скоринг → выбор → сборка листов. Возвращает summary dict.
 - `PendingQueue` — потокобезопасная очередь файлов с cooldown.
 - `IncomingFolderHandler` — watchdog event handler (on_created, on_moved для JPG).
@@ -239,7 +240,8 @@ kanatka2/
 
 ### `scorer.py` — Скоринг
 - `compute_overall_score(metrics, weights, thresholds)` — расчёт итогового score (0-100).
-- 3 компонента: `person_present` (40), `sharpness` (35), `exposure` (25).
+- 3 слоя: occupancy gate → quality gate → ranking.
+- Ranking-компоненты: `head_readability`, `head_pose`, `head_sharpness`, `head_exposure`, `readable_count`, `frame_quality`, `smile_bonus`.
 - Утилиты: `clamp()`, `normalize_range()`, `centered_score()`.
 
 ### `selector.py` — Выбор лучшего в серии
@@ -257,7 +259,7 @@ kanatka2/
 
 ### `badge_utils.py` — Score overlay (~274 строк)
 - `add_score_badge()` — рисует таблицу score поверх фото.
-- 3 колонки: Человек, Резкость, Свет.
+- 6 debug-колонок: Лицо, Ракурс, Резкость, Свет, Людей, Кадр.
 - Авто-масштаб шрифтов через `fit_table_fonts()` (binary search).
 - `DEBUG_COLUMNS` — определение колонок.
 
@@ -267,7 +269,8 @@ kanatka2/
 - `resize_longest_side()` — ресайз с сохранением пропорций.
 - `compute_sharpness()` — Laplacian variance.
 - `compute_brightness()` — средняя яркость.
-- `list_jpeg_files()` — список JPG файлов в папке.
+- `get_file_creation_time()` — унифицированное получение времени создания файла.
+- `list_jpeg_files()` / `list_image_files()` — список JPG/JPEG/PNG файлов, отсортированный по creation time.
 - `crop_image()` — обрезка по координатам.
 
 ### `export_utils.py` — Экспорт
@@ -310,12 +313,13 @@ kanatka2/
 | Секция | Назначение | Ключевые параметры |
 |--------|------------|-------------------|
 | `paths` | Все рабочие папки | `test_photos_folder`, `input_folder`, `output_*`, `log_dir` |
-| `series_detection` | Группировка в серии | `max_gap_seconds` (3.0), `cooldown_seconds` (8.0) |
+| `series_detection` | Группировка в серии | `max_gap_seconds` (2.0), `cooldown_seconds` (8.0) |
 | `haar_cascade` | Параметры Haar fallback | `scale_factor` (1.05), `min_neighbors` (3), `min_size` (60) |
 | `processing` | Обработка | `resize_longest_side` (1920) |
 | `output` | Выходные файлы | `show_score_badge`, `write_photo_metadata_json` |
-| `scoring_weights` | Веса скоринга | `person_present` (40), `sharpness` (35), `exposure` (25) |
-| `thresholds` | Пороги детекции | `min_face_confidence`, `min_person_confidence`, sharpness/brightness пороги |
+| `scoring_weights` | Веса скоринга | `head_readability`, `head_pose`, `head_sharpness`, `head_exposure`, `readable_count`, `frame_quality`, `smile_bonus` |
+| `thresholds` | Пороги детекции и quality gate | confidence, sharpness, brightness, readability, fallback ceiling |
+| `decision` | Спорные серии | `delta_score`, `manual_review_enabled` |
 | `network` | Сетевая папка | `output_path`, `auto_sync_sheets` |
 | `auth` | Авторизация | `settings_password` (дефолт: `1234`) |
 | `sheet` | Параметры листа | `grid_columns` (2), `grid_rows` (4), размеры, качество |
@@ -326,7 +330,7 @@ kanatka2/
 
 - **Фреймворк:** unittest (pytest не установлен в .venv).
 - **Запуск:** `.venv/Scripts/python.exe -m unittest discover -s tests -p "test_*.py"`.
-- **45 тестов, 11 файлов**, все проходят.
+- **52 теста, 12 файлов**, все проходят.
 - **Важно:** системный Python не видит cv2 — тесты обязательно через `.venv`.
 
 ---
@@ -395,5 +399,5 @@ kanatka2/
 - `TZ_PhotoSelector.md`
 - `src/config.json`
 - `src/series_browser.py` — главный веб-модуль
-- `src/watcher.py` — мониторинг INBOX
+- `src/watcher.py` — мониторинг входящей папки
 - `tools/camera_simulator.py` — симулятор камеры

@@ -2,7 +2,7 @@
 ; Автоматический отбор фото с горнолыжной канатки
 
 #define MyAppName "PhotoSelector"
-#define MyAppVersion "1.0"
+#define MyAppVersion "2.0"
 #define MyAppPublisher "Kanatka"
 #define MyAppExeName "PhotoSelector.exe"
 
@@ -15,7 +15,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=..\installers
-OutputBaseFilename=PhotoSelector_Setup
+OutputBaseFilename=PhotoSelector_Setup_v2
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -38,11 +38,13 @@ Source: "..\dist\PhotoSelector\_internal\*"; DestDir: "{app}\_internal"; Flags: 
 ; Batch helpers and docs
 Source: "run_photoselector.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "process_folder.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "simulate_camera.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\docs\user_testing_guide.md"; DestDir: "{app}"; DestName: "README.md"; Flags: ignoreversion
 
 [Dirs]
 ; Create working directories on install
 Name: "{app}\workdir"
+Name: "{app}\INBOX"
 Name: "{app}\workdir\incoming"
 Name: "{app}\workdir\selected"
 Name: "{app}\workdir\sheets"

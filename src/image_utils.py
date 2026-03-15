@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import cv2
@@ -69,8 +70,18 @@ def crop_image(image: np.ndarray, bbox: tuple[int, int, int, int], padding_ratio
 _SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
 
 
+def get_file_creation_time(path: str | Path) -> float:
+    """Return filesystem creation time on Windows, falling back safely elsewhere."""
+    stat = Path(path).stat()
+    if hasattr(stat, "st_birthtime"):
+        return float(stat.st_birthtime)
+    if os.name == "nt":
+        return float(stat.st_ctime)
+    return float(stat.st_mtime)
+
+
 def list_image_files(folder_path: str | Path) -> list[Path]:
-    """List all supported image files (JPG, JPEG, PNG) sorted by mtime."""
+    """List all supported image files sorted by series timestamp."""
     folder = Path(folder_path)
     return sorted(
         [
@@ -78,7 +89,7 @@ def list_image_files(folder_path: str | Path) -> list[Path]:
             for path in folder.iterdir()
             if path.is_file() and path.suffix.lower() in _SUPPORTED_IMAGE_EXTENSIONS
         ],
-        key=lambda path: (path.stat().st_mtime, path.name.lower()),
+        key=lambda path: (get_file_creation_time(path), path.name.lower()),
     )
 
 

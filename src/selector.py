@@ -9,7 +9,7 @@ from PIL import Image
 from analyzer import analyze_photo
 from badge_utils import add_score_badge
 from config_utils import save_json
-from image_utils import save_image
+from image_utils import get_file_creation_time, save_image
 from metadata_utils import build_photo_metadata_path, photo_metadata_enabled
 
 
@@ -164,9 +164,9 @@ def _compute_decision_state(
 
 
 def build_rejected_dir(base_dir: Path, series_name: str, series_files: list[Path], suffix: str) -> Path:
-    sorted_files = sorted(series_files, key=lambda path: (path.stat().st_mtime, path.name.lower()))
+    sorted_files = sorted(series_files, key=lambda path: (get_file_creation_time(path), path.name.lower()))
     reference_path = sorted_files[0]
-    reference_datetime = datetime.fromtimestamp(reference_path.stat().st_ctime)
+    reference_datetime = datetime.fromtimestamp(get_file_creation_time(reference_path))
     day_folder = base_dir / reference_datetime.strftime("%Y-%m-%d")
     folder_name = f"{reference_datetime:%Y%m%d_%H%M%S}__{series_name}__{suffix}"
     return day_folder / folder_name

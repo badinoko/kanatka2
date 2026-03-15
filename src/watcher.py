@@ -9,7 +9,7 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from face_utils import MediaPipeFaceAnalyzer
-from image_utils import list_jpeg_files
+from image_utils import get_file_creation_time, list_jpeg_files
 from print_utils import print_sheet
 from selector import process_series
 from sheet_composer import compose_pending_sheets
@@ -19,17 +19,18 @@ def group_files_by_time(file_paths: list[Path], max_gap_seconds: float) -> list[
     if not file_paths:
         return []
 
-    sorted_files = sorted(file_paths, key=lambda path: (path.stat().st_mtime, path.name.lower()))
+    sorted_files = sorted(file_paths, key=lambda path: (get_file_creation_time(path), path.name.lower()))
     groups = [[sorted_files[0]]]
-    previous_path = sorted_files[0]
+    previous_time = get_file_creation_time(sorted_files[0])
 
     for current_path in sorted_files[1:]:
-        gap = current_path.stat().st_mtime - previous_path.stat().st_mtime
+        current_time = get_file_creation_time(current_path)
+        gap = current_time - previous_time
         if gap <= max_gap_seconds:
             groups[-1].append(current_path)
         else:
             groups.append([current_path])
-        previous_path = current_path
+        previous_time = current_time
 
     return groups
 

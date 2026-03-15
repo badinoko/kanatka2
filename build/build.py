@@ -9,6 +9,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -19,9 +20,24 @@ PROJECT_ROOT = BUILD_DIR.parent
 DIST_DIR = PROJECT_ROOT / "dist"
 INSTALLERS_DIR = PROJECT_ROOT / "installers"
 
+def _safe_home() -> Path:
+    """Return a stable home path even when Path.home() is unavailable."""
+    try:
+        return Path.home()
+    except RuntimeError:
+        userprofile = os.environ.get("USERPROFILE")
+        if userprofile:
+            return Path(userprofile)
+        homedrive = os.environ.get("HOMEDRIVE", "")
+        homepath = os.environ.get("HOMEPATH", "")
+        if homedrive and homepath:
+            return Path(f"{homedrive}{homepath}")
+        return PROJECT_ROOT
+
+
 # Inno Setup compiler — стандартные пути
 ISCC_PATHS = [
-    Path.home() / "AppData" / "Local" / "Programs" / "Inno Setup 6" / "ISCC.exe",
+    _safe_home() / "AppData" / "Local" / "Programs" / "Inno Setup 6" / "ISCC.exe",
     Path("C:/Program Files (x86)/Inno Setup 6/ISCC.exe"),
     Path("C:/Program Files/Inno Setup 6/ISCC.exe"),
 ]

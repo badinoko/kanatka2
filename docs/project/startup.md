@@ -1,6 +1,6 @@
 # Startup
 
-Обновлено: 2026-03-15
+Обновлено: 2026-03-16
 
 ## Read Order
 
@@ -19,6 +19,10 @@
 - **Продукт = одна программа (PhotoSelector).** Один EXE, один инсталлятор.
 - `receiver/` — legacy-код, не поставляется, не собирается по умолчанию.
 - Камера складывает фото в папку → PhotoSelector делает всё остальное.
+- Серии должны формироваться по времени создания файла; рабочий ориентир заказчика — не больше 2 секунд внутри серии.
+- В engineer settings формулировки series timing уже переименованы в более понятные:
+  - `Макс. разрыв внутри серии`
+  - `Ожидание тишины перед разбором`
 - Основной выход — автоматически печатаемые листы.
 - `nearby/rescue` — инструмент исключений, не основной workflow.
 
@@ -43,11 +47,14 @@
   - настройки инженера уже есть;
   - nearby/rescue уже есть;
   - мониторинг INBOX уже есть.
+- Для customer smoke-testing уже собран installer:
+  - `installers/PhotoSelector_Setup_v2.exe`
+  - в поставке есть `INBOX`, `simulate_camera.bat`, `process_folder.bat` и актуальный `README.md`.
 - `receiver/` — legacy-код, не часть продукта.
 - Главный технический риск:
-  - score слишком упрощён;
-  - результат слишком чувствителен к thresholds;
-  - fallback и пустые/слабые кадры могут вести себя неправильно.
+  - code/docs/settings легко расходятся между собой;
+  - grouping серии критичен и должен опираться именно на время создания файла;
+  - `delta_score` и manual review должны оставаться доступными для полевой калибровки.
 - По raw feedback автора на decision-note уже подтверждено:
   - operator queue = variant B;
   - `delta_score` должен настраиваться;
@@ -56,12 +63,12 @@
 
 ## Immediate Priorities
 
-- KAN-038: переписать score-модель.
-- KAN-039: ввести `ambiguous_manual_review`.
-- KAN-044: сделать exception-flow без блокировки автопечати.
-- KAN-045: ввести переключаемый `autoprint`.
+- KAN-058: подтвердить на данных заказчика creation-time grouping и окно 2 секунды.
+- KAN-059: подтвердить UX/pонятность `delta_score` и manual review в настройках инженера.
+- KAN-060: довести user-facing guides после ручной проверки.
 - KAN-050: привести продукт к реальному workflow заказчика.
-- KAN-051: сделать test mode с экранной эмуляцией печати.
+- KAN-067: прогнать customer smoke-test через новый installer v2 и `INBOX.zip`.
+- KAN-040: спроектировать retention/cleanup и health-check.
 
 ## Execution Brief For New Chat
 
@@ -78,15 +85,17 @@
 2. Принять как исходные условия:
    - основной workflow живёт на нижнем ПК;
    - оператору не нужен live-photo stream;
+   - серии формируются по времени создания файла, целевое окно внутри серии = до 2 секунд;
    - спорные серии должны полностью выходить из текущего workflow и не тормозить остальные листы;
    - cleanup подтверждён как scheduled subprocess worker;
-   - `installers/` больше не игнорируется, но старые `.exe` удалены и ждут новой сборки.
+   - `installers/` больше не игнорируется;
+   - актуальный артефакт для заказчика сейчас: `installers/PhotoSelector_Setup_v2.exe`.
 3. Выполнять задачи в таком порядке:
-   - KAN-038: новая score-модель;
-   - KAN-039: `decision_state` и `ambiguous_manual_review`;
-   - KAN-044: exception-flow без остановки автопечати;
-   - KAN-045: `autoprint on/off`;
-   - KAN-051: test mode с экранной эмуляцией печати.
+   - KAN-058: creation-time grouping;
+   - KAN-059: `delta_score` и явные настройки manual review;
+   - KAN-060: чистка docs и подсказок по UI;
+   - KAN-050: приведение к реальному workflow заказчика;
+   - KAN-040: cleanup/retention и health-check.
 4. Кодовый фокус первой волны:
    - `src/scorer.py`
    - `src/analyzer.py`
@@ -119,5 +128,5 @@
 
 - Порт 8787: старые процессы нужно убивать перед перезапуском.
 - Тесты запускать только через `.venv`.
-- README и deployment-docs ещё не синхронизированы с текущей архитектурой.
+- Не путать `mtime` и время создания файла: для series grouping заказчик подтвердил именно creation time.
 - Не расширять `overview.md` narrative-секциями обратно.

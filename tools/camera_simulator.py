@@ -67,8 +67,10 @@ def main() -> int:
                         help="Размер серии для плоской папки (по умолчанию 8)")
     parser.add_argument("--frame-delay", type=float, default=0.2,
                         help="Задержка между кадрами в серии (сек)")
-    parser.add_argument("--series-delay-min", type=float, default=12.0)
-    parser.add_argument("--series-delay-max", type=float, default=20.0)
+    parser.add_argument("--series-delay-min", type=float, default=3.0,
+                        help="Мин. пауза между сериями (сек), по умолчанию ближе к ровному ритму канатки")
+    parser.add_argument("--series-delay-max", type=float, default=4.0,
+                        help="Макс. пауза между сериями (сек)")
     parser.add_argument("--no-shuffle", action="store_true",
                         help="Не перемешивать порядок серий")
     parser.add_argument("--seed", type=int, default=42)

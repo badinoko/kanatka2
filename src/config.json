@@ -13,7 +13,7 @@
     "output_ambiguous": "workdir/ambiguous"
   },
   "series_detection": {
-    "max_gap_seconds": 3.0,
+    "max_gap_seconds": 2.0,
     "cooldown_seconds": 8.0
   },
   "haar_cascade": {

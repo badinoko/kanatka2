@@ -14,13 +14,18 @@ echo имитируя работу камеры.
 echo.
 
 :: --- Параметры ---
-:: Папка с тестовыми фото (первый аргумент или спросим)
+:: Папка с тестовыми фото (первый аргумент, локальный INBOX или спросим)
 set "SOURCE=%~1"
 if "%SOURCE%"=="" (
-    echo Перетащите папку с фото на этот файл,
-    echo или укажите путь:
-    echo.
-    set /p "SOURCE=Путь к папке с фото: "
+    if exist "%~dp0INBOX" (
+        set "SOURCE=%~dp0INBOX"
+        echo Используется папка по умолчанию: %SOURCE%
+    ) else (
+        echo Перетащите папку с фото на этот файл,
+        echo или укажите путь:
+        echo.
+        set /p "SOURCE=Путь к папке с фото: "
+    )
 )
 
 if not exist "%SOURCE%" (
@@ -49,7 +54,7 @@ echo Источник:     %SOURCE%
 echo Назначение:   %DEST%
 echo.
 echo Фото будут копироваться порциями по 5-8 штук
-echo с паузой 10 секунд между порциями.
+echo с паузой 3 секунды между порциями.
 echo Это имитирует проезд кресел канатки.
 echo.
 echo Нажмите любую клавишу для старта...
@@ -71,14 +76,14 @@ for %%f in ("%SOURCE%\*.jpg" "%SOURCE%\*.jpeg" "%SOURCE%\*.png") do (
         set /a BATCH+=1
         echo.
         echo --- Серия !BATCH! отправлена ^(!INBATCH! фото^) ---
-        echo     Пауза 10 сек...
+        echo     Пауза 3 сек...
         echo.
         set INBATCH=0
 
         :: Случайный размер следующей порции (5-8)
         set /a BATCHSIZE=5 + !RANDOM! %% 4
 
-        timeout /t 10 /nobreak >nul
+        timeout /t 3 /nobreak >nul
     )
 )
 
