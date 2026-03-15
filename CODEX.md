@@ -11,11 +11,12 @@
 1. `AGENTS.md`
 2. `CLAUDE.md`
 3. `docs/project/overview.md`
-4. `docs/project/startup.md`
-5. `docs/project/progress.md`
-6. Этот файл (`CODEX.md`)
-7. `TZ_PhotoSelector.md`
-8. Код и конфиги
+4. `docs/project/roadmap.md`
+5. `docs/project/startup.md`
+6. `docs/project/progress.md`
+7. Этот файл (`CODEX.md`)
+8. `TZ_PhotoSelector.md`
+9. Код и конфиги
 
 Этот файл не заменяет `CLAUDE.md`. Он нужен как короткая памятка именно для Codex-сессий.
 
@@ -42,9 +43,10 @@
 ## 3. Как подходить к задачам
 
 1. Сначала зафиксировать решение в `docs/project/overview.md`, если меняется архитектура, приоритеты или продуктовая форма.
-2. Потом append-only запись в `docs/project/progress.md`.
-3. Если меняется точка входа в следующую сессию, обновить `docs/project/startup.md`.
-4. Только после этого делать кодовые правки, если направление уже определено.
+2. Длинные объяснения и этапы держать в `docs/project/roadmap.md`, а не раздувать `overview.md`.
+3. Потом append-only запись в `docs/project/progress.md`.
+4. Если меняется точка входа в следующую сессию, обновить `docs/project/startup.md`.
+5. Только после этого делать кодовые правки, если направление уже определено.
 
 ---
 

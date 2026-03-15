@@ -9,10 +9,10 @@
 1. CLAUDE.md
 2. CODEX.md
 3. docs/project/overview.md
-4. docs/project/startup.md
-5. tail docs/project/progress.md
-6. docs/project/kan-038-score-design-brief.md
-7. docs/project/decision-note-2026-03-15-queue-print-cleanup.md
+4. docs/project/roadmap.md
+5. docs/project/startup.md
+6. tail docs/project/progress.md
+7. docs/project/kan-038-score-design-brief.md
 
 Контекст:
 - Архитектура уже достаточно подтверждена: верхний ПК в основном передаёт фото, нижний ПК делает основной workflow.
@@ -32,7 +32,7 @@
    - selected
    - ambiguous_manual_review
    - discarded_empty
-6. Не внедрять пока финальный queue UX для оператора, автопечать и cleanup isolation — по ним уже есть decision-note, но внешние хвосты ещё не до конца закрыты.
+6. Не внедрять пока финальный queue UX для оператора, автопечать и cleanup isolation — по ним есть решения в roadmap, но внешние хвосты ещё не до конца закрыты.
 
 Практический фокус этой сессии:
 - сначала scorer.py

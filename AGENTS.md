@@ -6,6 +6,7 @@ Entry point for assistants in this repository.
 2. If present, read `CODEX.md` as a short Codex-specific companion.
 3. Then read:
    - `docs/project/overview.md`
+   - `docs/project/roadmap.md`
    - `docs/project/startup.md`
    - tail of `docs/project/progress.md`
 4. Do not mark work as finally complete without explicit user confirmation.
@@ -25,6 +26,7 @@ Entry point for assistants in this repository.
 ## Core repo laws
 
 - Source of current project state: `docs/project/overview.md`
+- Source of expanded product plan: `docs/project/roadmap.md`
 - Session memory: `docs/project/progress.md`
 - Fast handoff context: `docs/project/startup.md`
 - Product intent and constraints: `TZ_PhotoSelector.md`
