@@ -3,8 +3,10 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 dist/
-build/
-*.spec
+
+# PyInstaller work directories
+build/work_main/
+build/work_receiver/
 
 # Virtual environment
 .venv/
