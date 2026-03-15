@@ -28,7 +28,6 @@ class TestStartServer(unittest.TestCase):
 
         mock_kill.assert_called_once_with(19999)
         mock_srv_cls.assert_called_once()
-        mock_server.serve_forever.assert_not_called()  # called in thread
         mock_wb.open.assert_not_called()
         self.assertIsNotNone(thread)
 

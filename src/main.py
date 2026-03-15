@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from app import launch_app
 from config_utils import ensure_runtime_directories, load_config
 from gui import launch_gui
 from logger_setup import build_logger
@@ -23,6 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("watch", help="Следить за папкой incoming")
     subparsers.add_parser("sheet", help="Собрать листы из selected")
     subparsers.add_parser("gui", help="Запустить графический интерфейс")
+    subparsers.add_parser("app", help="Запустить приложение (pywebview)")
     return parser
 
 
@@ -31,12 +33,16 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.command is None:
-        launch_gui(args.config)
+        launch_app(args.config)
         return 0
 
     config = load_config(args.config)
     ensure_runtime_directories(config)
     logger = build_logger(config["paths"]["log_dir"])
+
+    if args.command == "app":
+        launch_app(args.config)
+        return 0
 
     if args.command == "gui":
         launch_gui(args.config)
