@@ -66,13 +66,21 @@ def crop_image(image: np.ndarray, bbox: tuple[int, int, int, int], padding_ratio
     return image[y1:y2, x1:x2]
 
 
-def list_jpeg_files(folder_path: str | Path) -> list[Path]:
+_SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+
+
+def list_image_files(folder_path: str | Path) -> list[Path]:
+    """List all supported image files (JPG, JPEG, PNG) sorted by mtime."""
     folder = Path(folder_path)
     return sorted(
         [
             path
             for path in folder.iterdir()
-            if path.is_file() and path.suffix.lower() in {".jpg", ".jpeg"}
+            if path.is_file() and path.suffix.lower() in _SUPPORTED_IMAGE_EXTENSIONS
         ],
         key=lambda path: (path.stat().st_mtime, path.name.lower()),
     )
+
+
+# Keep old name as alias for backward compatibility
+list_jpeg_files = list_image_files

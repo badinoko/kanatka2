@@ -71,13 +71,9 @@ def process_series(
     # Determine decision_state
     decision_state = _compute_decision_state(occupied_results, best_result, config)
 
-    # Route: ambiguous series go to separate folder so they don't block sheet assembly
-    if decision_state == "ambiguous_manual_review":
-        ambiguous_dir = Path(config["paths"].get("output_ambiguous", "workdir/ambiguous"))
-        ambiguous_dir.mkdir(parents=True, exist_ok=True)
-        selected_output = ambiguous_dir / f"{series_name}_{best_path.name}"
-    else:
-        selected_output = Path(config["paths"]["output_selected"]) / f"{series_name}_{best_path.name}"
+    # Best photo always goes to selected/ (for sheet assembly).
+    # Ambiguous flag is metadata only — shown in UI for manual review.
+    selected_output = Path(config["paths"]["output_selected"]) / f"{series_name}_{best_path.name}"
 
     shutil.copy2(best_path, selected_output)
 
@@ -112,7 +108,7 @@ def process_series(
             config=config,
         )
 
-    status = decision_state if decision_state == "ambiguous_manual_review" else "selected"
+    status = "selected"  # always selected; ambiguous is a UI flag, not routing
     save_json(
         {
             "series": series_name,

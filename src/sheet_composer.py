@@ -62,7 +62,10 @@ def compose_pending_sheets(config: dict, logger, allow_partial: bool | None = No
     partial_enabled = sheet_config.get("allow_partial_sheet", False) if allow_partial is None else allow_partial
     partial_minimum = min(sheet_config.get("min_photos_to_compose", photos_per_sheet), photos_per_sheet)
 
-    selected_files = sorted(selected_dir.glob("*.jpg"), key=lambda path: (path.stat().st_mtime, path.name.lower()))
+    selected_files = sorted(
+        [p for ext in ("*.jpg", "*.jpeg", "*.png") for p in selected_dir.glob(ext)],
+        key=lambda path: (path.stat().st_mtime, path.name.lower()),
+    )
     generated_sheets: list[Path] = []
 
     while len(selected_files) >= photos_per_sheet:

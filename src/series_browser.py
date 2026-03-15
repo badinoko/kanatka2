@@ -52,7 +52,7 @@ class _MonitorState:
 
 
 def _start_monitoring(config: dict) -> None:
-    """Start watching the INBOX folder in a background thread."""
+    """Start watching the incoming folder in a background thread."""
     if _MonitorState.is_active():
         return
 
@@ -71,11 +71,11 @@ def _start_monitoring(config: dict) -> None:
         _MonitorState.error = "watchdog не установлен"
         return
 
-    inbox_dir = Path(config["paths"]["test_photos_folder"])
-    if not inbox_dir.is_absolute():
+    incoming_dir = Path(config["paths"]["input_folder"])
+    if not incoming_dir.is_absolute():
         from config_utils import get_project_root
-        inbox_dir = get_project_root() / inbox_dir
-    inbox_dir.mkdir(parents=True, exist_ok=True)
+        incoming_dir = get_project_root() / incoming_dir
+    incoming_dir.mkdir(parents=True, exist_ok=True)
 
     _MonitorState.error = ""
     _MonitorState.series_count = 0
@@ -84,12 +84,12 @@ def _start_monitoring(config: dict) -> None:
 
     def monitor_loop() -> None:
         logger = build_logger(config["paths"]["log_dir"])
-        logger.info("Автономный режим: мониторинг %s", inbox_dir)
+        logger.info("Автономный режим: мониторинг %s", incoming_dir)
 
         analyzer = MediaPipeFaceAnalyzer(config["thresholds"]["min_face_confidence"])
         pending = PendingQueue()
         observer = Observer()
-        observer.schedule(IncomingFolderHandler(pending), str(inbox_dir), recursive=False)
+        observer.schedule(IncomingFolderHandler(pending), str(incoming_dir), recursive=False)
         observer.start()
         _MonitorState.observer = observer
 
@@ -126,7 +126,7 @@ def _start_monitoring(config: dict) -> None:
 
 
 def _stop_monitoring() -> None:
-    """Stop the INBOX monitoring thread."""
+    """Stop the incoming folder monitoring thread."""
     _MonitorState.running = False
     if _MonitorState.observer is not None:
         try:
@@ -938,7 +938,7 @@ def _render_series_list(all_series: list[dict], page: int = 1, filter_status: st
             '<div style="background:#e8f5e9; border-radius:12px; padding:16px 20px; margin-bottom:16px; '
             'display:flex; align-items:center; justify-content:space-between; border:1px solid #a5d6a7">'
             '<div>'
-            '<span style="color:#2e7d32; font-weight:700; font-size:15px">&#9679; Мониторинг INBOX активен</span>'
+            '<span style="color:#2e7d32; font-weight:700; font-size:15px">&#9679; Мониторинг активен</span>'
             f'<span style="color:#666; font-size:13px; margin-left:12px">Обработано серий: {mon["series_processed"]}</span>'
             + (f'<span style="color:#888; font-size:13px; margin-left:12px">Последнее: {mon["last_activity"]}</span>'
                if mon["last_activity"] else "")
@@ -954,7 +954,7 @@ def _render_series_list(all_series: list[dict], page: int = 1, filter_status: st
             '<div style="background:#fff; border-radius:12px; padding:16px 20px; margin-bottom:16px; '
             'display:flex; align-items:center; justify-content:space-between; box-shadow:0 2px 8px rgba(0,0,0,0.06)">'
             '<div>'
-            '<span style="color:#666; font-size:14px">&#128247; Автономный режим: мониторинг папки INBOX</span>'
+            '<span style="color:#666; font-size:14px">&#128247; Автономный режим: мониторинг входящих фото</span>'
             + err_html
             + '</div>'
             '<button onclick="toggleMonitor(\'start\')" style="background:#2ecc71; color:#fff; border:none; '

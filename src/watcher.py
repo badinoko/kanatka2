@@ -128,14 +128,14 @@ class IncomingFolderHandler(FileSystemEventHandler):
         if event.is_directory:
             return
         path = Path(event.src_path)
-        if path.suffix.lower() in {".jpg", ".jpeg"}:
+        if path.suffix.lower() in {".jpg", ".jpeg", ".png"}:
             self.pending_queue.add(path)
 
     def on_moved(self, event) -> None:
         if event.is_directory:
             return
         path = Path(event.dest_path)
-        if path.suffix.lower() in {".jpg", ".jpeg"}:
+        if path.suffix.lower() in {".jpg", ".jpeg", ".png"}:
             self.pending_queue.add(path)
 
 

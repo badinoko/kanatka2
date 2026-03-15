@@ -64,7 +64,7 @@ def main() -> int:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             target_name = f"SER{series_index:03d}_IMG{frame_index:03d}_{timestamp}{photo_path.suffix.lower()}"
             target_path = target_folder / target_name
-            shutil.copy2(photo_path, target_path)
+            shutil.copy(photo_path, target_path)
             logger.info(
                 "Серия %s, кадр %s/%s -> %s",
                 series_index,
