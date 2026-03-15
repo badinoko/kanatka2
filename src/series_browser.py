@@ -1170,10 +1170,10 @@ _SETTINGS_SCHEMA: list[tuple[str, str, list[tuple]]] = [
         [
             ("series_detection", "max_gap_seconds", "Макс. пауза между кадрами",
              "Если между двумя кадрами прошло меньше этого времени — они в одной серии.",
-             "range", {"min": 0.5, "max": 10, "step": 0.5}),
+             "range", {"min": 0.1, "max": 10, "step": 0.1}),
             ("series_detection", "cooldown_seconds", "Пауза между сериями",
              "Минимальное время между последним кадром одной серии и первым кадром следующей.",
-             "range", {"min": 1, "max": 30, "step": 1}),
+             "range", {"min": 0.5, "max": 30, "step": 0.1}),
         ],
     ),
     (
@@ -1436,10 +1436,16 @@ def _render_settings(config: dict) -> str:
                 st = extra.get("step", 1)
                 val = float(current) if current != "" else mn
                 control = (
-                    f'<input type="range" id="{field_id}" name="{field_id}"'
+                    f'<div style="display:flex; align-items:center; gap:8px">'
+                    f'<input type="range" id="{field_id}" name="{field_id}_range"'
                     f' min="{mn}" max="{mx}" step="{st}" value="{val}"'
-                    f' oninput="document.getElementById(\'{field_id}_val\').textContent=this.value">'
-                    f'<span class="val-display" id="{field_id}_val">{val}</span>'
+                    f' style="flex:1"'
+                    f' oninput="document.getElementById(\'{field_id}_num\').value=this.value">'
+                    f'<input type="number" id="{field_id}_num" name="{field_id}"'
+                    f' min="{mn}" max="{mx}" step="{st}" value="{val}"'
+                    f' style="width:70px; text-align:center; border:1px solid #ccc; border-radius:6px; padding:4px 6px; font-size:14px"'
+                    f' oninput="document.getElementById(\'{field_id}\').value=this.value">'
+                    f'</div>'
                 )
             elif input_type == "number":
                 mn = extra.get("min", 0)
@@ -1486,6 +1492,8 @@ function saveSettings() {
     var inputs = document.querySelectorAll('.setting-control input, .setting-control select');
     for (var i = 0; i < inputs.length; i++) {
         var inp = inputs[i];
+        // Skip range sliders — value comes from the paired number input
+        if (inp.name.endsWith('_range')) continue;
         if (inp.type === 'checkbox') {
             data[inp.name] = inp.checked;
         } else {
