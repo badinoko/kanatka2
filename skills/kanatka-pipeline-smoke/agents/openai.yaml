@@ -1,0 +1,5 @@
+interface:
+  display_name: "Kanatka Pipeline Smoke"
+  short_description: "Run end-to-end kanatka smoke checks."
+  default_prompt: "Use $kanatka-pipeline-smoke to verify the kanatka processing flow end to end and collect concrete evidence."
+

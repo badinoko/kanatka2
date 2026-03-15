@@ -1,0 +1,5 @@
+interface:
+  display_name: "Kanatka Score Debug"
+  short_description: "Explain score tables and rejected frames."
+  default_prompt: "Use $kanatka-score-debug to explain why this kanatka photo got its score and what part of the series logic affected it."
+

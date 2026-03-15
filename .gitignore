@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.spec
+
+# Virtual environment
+.venv/
+
+# Working directories (runtime data)
+workdir/
+INBOX/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# matplotlib config
+.mplconfig/
+
+# Application data
+AppData/
+
+# Archives with binary data (old workdirs with JPGs)
+archive/workdir_old_*/
+*.zip
+
+# Logs
+*.log
+
+# Claude Code local settings
+.claude/

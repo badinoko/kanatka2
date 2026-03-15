@@ -1,0 +1,65 @@
+{
+  "paths": {
+    "test_photos_folder": "INBOX",
+    "input_folder": "workdir/incoming",
+    "output_selected": "workdir/selected",
+    "output_sheets": "workdir/sheets",
+    "output_archive": "workdir/archive",
+    "output_discarded": "workdir/discarded",
+    "output_rejected": "workdir/rejected",
+    "photo_metadata_dir": "workdir/temp/photo_metadata",
+    "log_dir": "workdir/logs",
+    "annotated_dir": "workdir/logs/annotated"
+  },
+  "series_detection": {
+    "max_gap_seconds": 3.0,
+    "cooldown_seconds": 8.0
+  },
+  "haar_cascade": {
+    "scale_factor": 1.05,
+    "min_neighbors": 3,
+    "min_size": 60
+  },
+  "processing": {
+    "resize_longest_side": 1920
+  },
+  "output": {
+    "show_score_badge": true,
+    "write_photo_metadata_json": false
+  },
+  "scoring_weights": {
+    "person_present": 40,
+    "sharpness": 35,
+    "exposure": 25
+  },
+  "thresholds": {
+    "min_face_confidence": 0.45,
+    "min_person_confidence": 0.5,
+    "min_head_sharpness": 30.0,
+    "good_head_sharpness": 180.0,
+    "min_frame_sharpness": 50.0,
+    "good_frame_sharpness": 250.0,
+    "target_head_brightness": 145.0,
+    "head_brightness_tolerance": 90.0
+  },
+  "network": {
+    "output_path": "",
+    "auto_sync_sheets": true
+  },
+  "auth": {
+    "settings_password": "1234"
+  },
+  "sheet": {
+    "photos_per_sheet": 8,
+    "allow_partial_sheet": true,
+    "min_photos_to_compose": 4,
+    "grid_columns": 2,
+    "grid_rows": 4,
+    "sheet_width_px": 3508,
+    "sheet_height_px": 4961,
+    "cell_padding_px": 20,
+    "show_score_badge": true,
+    "output_format": "JPEG",
+    "output_quality": 95
+  }
+}

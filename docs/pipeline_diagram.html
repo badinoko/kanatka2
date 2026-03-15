@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kanatka Pipeline — Диаграмма логики отсеивания</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+
+  .container { max-width: 1280px; margin: 0 auto; padding: 32px 24px; }
+
+  h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; color: #f8fafc; }
+  .subtitle { color: #94a3b8; font-size: 15px; margin-bottom: 32px; }
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 24px; background: #1e293b; border-radius: 12px; padding: 4px; width: fit-content; }
+  .tab { padding: 10px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500; color: #94a3b8; transition: all 0.2s; border: none; background: none; }
+  .tab:hover { color: #cbd5e1; }
+  .tab.active { background: #3b82f6; color: #fff; }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* ─── Flow diagram ─── */
+  .flow { display: flex; flex-direction: column; gap: 0; align-items: center; }
+
+  .phase-label {
+    width: 100%; max-width: 900px;
+    padding: 10px 20px; margin-top: 28px; margin-bottom: 12px;
+    font-size: 13px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase;
+    color: #94a3b8; border-left: 3px solid;
+  }
+  .phase-label.detect { border-color: #f59e0b; color: #fbbf24; }
+  .phase-label.score  { border-color: #3b82f6; color: #60a5fa; }
+  .phase-label.select { border-color: #10b981; color: #34d399; }
+
+  .node {
+    position: relative;
+    width: 100%; max-width: 900px;
+    padding: 20px 24px;
+    border-radius: 12px;
+    border: 1px solid #334155;
+    background: #1e293b;
+    transition: all 0.2s;
+  }
+  .node:hover { border-color: #475569; background: #1e2d45; }
+
+  .node-header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .step-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; border-radius: 50%;
+    font-size: 14px; font-weight: 700; flex-shrink: 0;
+  }
+  .step-num.detect { background: #78350f; color: #fbbf24; }
+  .step-num.score  { background: #1e3a5f; color: #60a5fa; }
+  .step-num.select { background: #064e3b; color: #34d399; }
+
+  .node-title { font-size: 17px; font-weight: 600; color: #f1f5f9; }
+  .node-body { font-size: 14px; color: #94a3b8; line-height: 1.6; margin-left: 44px; }
+  .node-body strong { color: #cbd5e1; font-weight: 600; }
+
+  .outcome {
+    display: inline-block; padding: 3px 10px; border-radius: 6px;
+    font-size: 12px; font-weight: 600; margin-top: 6px;
+  }
+  .outcome.pass     { background: #064e3b; color: #34d399; }
+  .outcome.fail     { background: #7f1d1d; color: #fca5a5; }
+  .outcome.fallback { background: #78350f; color: #fbbf24; }
+
+  .arrow {
+    width: 2px; height: 28px; background: #334155; position: relative;
+  }
+  .arrow::after {
+    content: ''; position: absolute; bottom: -4px; left: -4px;
+    border-left: 5px solid transparent; border-right: 5px solid transparent;
+    border-top: 6px solid #334155;
+  }
+
+  .branch {
+    display: flex; gap: 16px; width: 100%; max-width: 900px;
+  }
+  .branch .node { flex: 1; }
+
+  /* ─── Comparison table ─── */
+  .compare-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+    max-width: 1100px;
+  }
+  .compare-card {
+    background: #1e293b; border-radius: 12px; border: 1px solid #334155;
+    padding: 24px; position: relative;
+  }
+  .compare-card h3 { font-size: 18px; margin-bottom: 16px; }
+  .compare-card.old h3 { color: #f87171; }
+  .compare-card.new h3 { color: #34d399; }
+
+  .step-list { list-style: none; }
+  .step-list li {
+    padding: 10px 14px; border-radius: 8px; margin-bottom: 6px;
+    font-size: 14px; line-height: 1.5;
+    border-left: 3px solid transparent;
+  }
+  .step-list li .num { font-weight: 700; margin-right: 6px; }
+
+  .compare-card.old .step-list li { border-left-color: #475569; background: #0f172a; }
+  .compare-card.old .step-list li.problem { border-left-color: #ef4444; background: #1c1017; }
+  .compare-card.old .step-list li.problem::after {
+    content: attr(data-issue);
+    display: block; font-size: 12px; color: #f87171; margin-top: 4px; font-style: italic;
+  }
+
+  .compare-card.new .step-list li { border-left-color: #334155; background: #0f172a; }
+  .compare-card.new .step-list li.detect { border-left-color: #f59e0b; }
+  .compare-card.new .step-list li.score  { border-left-color: #3b82f6; }
+  .compare-card.new .step-list li.select { border-left-color: #10b981; }
+
+  .tag {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 11px; font-weight: 600; margin-left: 6px; vertical-align: middle;
+  }
+  .tag.detect { background: #78350f; color: #fbbf24; }
+  .tag.score  { background: #1e3a5f; color: #60a5fa; }
+  .tag.select { background: #064e3b; color: #34d399; }
+
+  /* ─── Code mapping ─── */
+  .mapping { max-width: 1000px; }
+  .map-row {
+    display: grid; grid-template-columns: 60px 1fr 1fr;
+    gap: 12px; padding: 14px 0;
+    border-bottom: 1px solid #1e293b;
+    font-size: 14px; align-items: start;
+  }
+  .map-row.header {
+    font-weight: 700; color: #64748b; font-size: 12px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    border-bottom: 2px solid #334155; padding-bottom: 10px;
+  }
+  .map-step { font-weight: 700; }
+  .map-file { color: #60a5fa; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 13px; }
+  .map-func { color: #c084fc; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 13px; }
+  .map-desc { color: #94a3b8; }
+
+  @media (max-width: 768px) {
+    .compare-grid { grid-template-columns: 1fr; }
+    .branch { flex-direction: column; }
+    .map-row { grid-template-columns: 40px 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Kanatka: логика отсеивания фотографий</h1>
+  <p class="subtitle">Как 7 шагов Lock Zone превращаются в понятный пайплайн из 3 фаз</p>
+
+  <div class="tabs">
+    <button class="tab active" onclick="showPanel('flow')">Поток данных</button>
+    <button class="tab" onclick="showPanel('compare')">Было / Стало</button>
+    <button class="tab" onclick="showPanel('mapping')">Код &harr; Шаги</button>
+  </div>
+
+  <!-- ════════════════ TAB 1: FLOW ════════════════ -->
+  <div id="flow" class="panel active">
+
+    <div class="flow">
+
+      <!-- INPUT -->
+      <div class="node" style="border-color:#6366f1; background:#1e1b4b;">
+        <div class="node-header">
+          <div class="step-num" style="background:#312e81;color:#a5b4fc;">IN</div>
+          <div class="node-title">Папка INBOX &rarr; группировка по времени</div>
+        </div>
+        <div class="node-body">
+          Фото сортируются по <strong>mtime</strong>. Если разрыв между соседними &le; 3 сек &mdash; одна серия.<br>
+          Пауза &gt; 8 сек &mdash; новое кресло. Каждая серия = 1 проезд кресла мимо камеры.
+        </div>
+      </div>
+
+      <div class="arrow"></div>
+
+      <!-- PHASE 1: DETECT -->
+      <div class="phase-label detect">Фаза 1 &mdash; Детекция: кто-нибудь есть?</div>
+
+      <div class="node">
+        <div class="node-header">
+          <div class="step-num detect">1</div>
+          <div class="node-title">Детекция лиц (MediaPipe)</div>
+        </div>
+        <div class="node-body">
+          Для каждого кадра серии запускаем <strong>FaceDetector</strong> + <strong>FaceLandmarker</strong>.<br>
+          Результат: список лиц с bbox, landmarks, confidence. Если лицо найдено &mdash; <code>subject_present = true</code>.
+          <br><span class="outcome pass">Лицо найдено &rarr; шаг 3</span>
+          <span class="outcome fallback">Лицо НЕ найдено &rarr; шаг 2</span>
+        </div>
+      </div>
+
+      <div class="arrow"></div>
+
+      <div class="node">
+        <div class="node-header">
+          <div class="step-num detect">2</div>
+          <div class="node-title">Fallback: детекция фигуры человека (HOG)</div>
+        </div>
+        <div class="node-body">
+          Если лиц нет &mdash; пробуем <strong>HOG People Detector</strong> (OpenCV).<br>
+          Ищем фигуру в центральной зоне кадра (18-82% по X, 20-95% по Y).<br>
+          Если confidence &ge; 0.55 &mdash; человек есть, но лицо скрыто экипировкой или ракурсом.
+          <br><span class="outcome pass">Человек найден &rarr; subject_present = true</span>
+          <span class="outcome fail">Никого нет &rarr; серия = empty</span>
+        </div>
+      </div>
+
+      <div class="arrow"></div>
+
+      <div class="branch">
+        <div class="node" style="border-color:#991b1b; flex:0.4;">
+          <div class="node-header">
+            <div class="step-num" style="background:#7f1d1d;color:#fca5a5;">X</div>
+            <div class="node-title" style="color:#fca5a5;">Пустое кресло</div>
+          </div>
+          <div class="node-body">
+            Ни лица, ни фигуры &rarr; вся серия в <code>rejected/empty</code>.<br>
+            Дальше не анализируется.
+          </div>
+        </div>
+        <div class="node" style="border-color:#065f46; flex:0.6;">
+          <div class="node-header">
+            <div class="step-num" style="background:#064e3b;color:#34d399;">&check;</div>
+            <div class="node-title" style="color:#34d399;">Кресло занято &rarr; оцениваем</div>
+          </div>
+          <div class="node-body">
+            Хотя бы на одном кадре серии найден человек.<br>
+            Серия переходит в фазу оценки.
+          </div>
+        </div>
+      </div>
+
+      <div class="arrow"></div>
+
+      <!-- PHASE 2: SCORE -->
+      <div class="phase-label score">Фаза 2 &mdash; Оценка: насколько хорош каждый кадр?</div>
+
+      <div class="node">
+        <div class="node-header">
+          <div class="step-num score">3</div>
+          <div class="node-title">Скоринг кадра (7 критериев, взвешенная сумма)</div>
+        </div>
+        <div class="node-body">
+          Каждый кадр получает оценку 0&ndash;100 по формуле:<br><br>
+          <div style="display:grid; grid-template-columns: auto 1fr auto; gap: 4px 16px; font-size:13px; max-width:540px;">
+            <strong>Критерий</strong><strong>Что проверяем</strong><strong>Вес</strong>
+            <span>face_count</span><span>Есть ли человек вообще (бинарно)</span><span style="color:#fbbf24;">30</span>
+            <span>face_orientation</span><span>Ракурс лица (yaw/pitch/roll)</span><span style="color:#fbbf24;">20</span>
+            <span>face_sharpness</span><span>Резкость зоны лица</span><span style="color:#fbbf24;">15</span>
+            <span>face_visibility</span><span>Видимость лица (перекрытия)</span><span style="color:#fbbf24;">15</span>
+            <span>eyes_open</span><span>Открыты ли глаза (EAR)</span><span style="color:#fbbf24;">10</span>
+            <span>face_exposure</span><span>Освещение лица</span><span style="color:#fbbf24;">5</span>
+            <span>overall_sharpness</span><span>Общая резкость кадра</span><span style="color:#fbbf24;">5</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="arrow"></div>
+
+      <div class="node">
+        <div class="node-header">
+          <div class="step-num score">4</div>
+          <div class="node-title">Специальные правила экипировки</div>
+        </div>
+        <div class="node-body">
+          <strong>Горнолыжные очки / маска / шлем</strong> &mdash; это нормально, не штрафуем.<br>
+          Если <code>goggle_score</code> или <code>mask_score</code> &ge; 0.45 &rarr; <strong>eyes_open = 1.0</strong> (не снижаем за закрытые глаза).<br><br>
+          <strong>Посторонний предмет перед лицом</strong> &mdash; это плохо, штрафуем.<br>
+          <code>occlusion_score</code> минус то, что объясняется экипировкой = чистый штраф видимости.
+        </div>
+      </div>
+
+      <div class="arrow"></div>
+
+      <div class="node">
+        <div class="node-header">
+          <div class="step-num score">5</div>
+          <div class="node-title">Fallback внутри серии</div>
+        </div>
+        <div class="node-body">
+          <strong>Если в серии есть кадры с лицами и кадры без лиц:</strong><br>
+          Кадр без лица заимствует лицевые оценки у ближайшего кадра с лицом (с множителем &times;0.9).<br>
+          Это позволяет не терять кадр, где человек есть, но MediaPipe промахнулся.<br><br>
+          <strong>Если в серии лиц нет совсем, но HOG нашел человека:</strong><br>
+          Используем <code>selection_score = occupancy &times; 0.7 + sharpness &times; 0.3</code> &mdash; упрощенный скоринг без лицевых метрик.
+        </div>
+      </div>
+
+      <div class="arrow"></div>
+
+      <!-- PHASE 3: SELECT -->
+      <div class="phase-label select">Фаза 3 &mdash; Выбор: какой кадр лучший?</div>
+
+      <div class="node">
+        <div class="node-header">
+          <div class="step-num select">6</div>
+          <div class="node-title">Лучший кадр серии &rarr; selected</div>
+        </div>
+        <div class="node-body">
+          Кадр с <strong>максимальным score</strong> среди всех живых кадров &rarr; копируется в <code>workdir/selected/</code>.<br>
+          Остальные кадры &rarr; <code>workdir/rejected/</code> с бейджем score.
+        </div>
+      </div>
+
+      <div class="arrow"></div>
+
+      <div class="node">
+        <div class="node-header">
+          <div class="step-num select">7</div>
+          <div class="node-title">Печатный лист (при накоплении 8 фото)</div>
+        </div>
+        <div class="node-body">
+          Когда в <code>selected/</code> набирается <strong>8 фото</strong> &rarr; собирается лист-сетка 2&times;4.<br>
+          Лист &rarr; <code>workdir/sheets/</code>, фото &rarr; <code>workdir/archive/</code>.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ════════════════ TAB 2: COMPARE ════════════════ -->
+  <div id="compare" class="panel">
+    <div class="compare-grid">
+      <div class="compare-card old">
+        <h3>Текущий Lock Zone (7 шагов)</h3>
+        <ul class="step-list">
+          <li class="problem" data-issue="Шаги 1 и 2 — одна и та же проверка, записанная дважды (нет/есть человек)">
+            <span class="num">1.</span> Есть ли человек? Нет &rarr; empty
+          </li>
+          <li class="problem" data-issue="Дублирует шаг 1 с обратным результатом">
+            <span class="num">2.</span> Есть ли хотя бы один человек? Да &rarr; дальше
+          </li>
+          <li>
+            <span class="num">3.</span> Есть ли читаемое лицо? &rarr; лицевые метрики
+          </li>
+          <li class="problem" data-issue="Шаги 4 и 5 — не «шаги», а правила внутри скоринга. Выполняются одновременно, не последовательно.">
+            <span class="num">4.</span> Лицо закрыто очками/маской &rarr; не штрафовать
+          </li>
+          <li class="problem" data-issue="Не отдельный шаг, а часть вычисления visibility_score внутри шага 3">
+            <span class="num">5.</span> Лицо перекрыто предметом &rarr; штрафовать
+          </li>
+          <li class="problem" data-issue="Это fallback-ветка, а не «шаг» — срабатывает по условию, а не после шага 5">
+            <span class="num">6.</span> Лицо не найдено, но человек есть &rarr; осторожно
+          </li>
+          <li>
+            <span class="num">7.</span> Выбор лучшего кадра в серии
+          </li>
+        </ul>
+        <p style="margin-top:16px; font-size:13px; color:#f87171; line-height:1.5;">
+          <strong>Проблемы:</strong> шаги смешивают три разных процесса (детекцию, скоринг, выбор),
+          дублируют друг друга, и их нельзя читать как последовательность &mdash; шаги 4-5 происходят
+          внутри шага 3, а шаг 6 &mdash; это ветка для случая, когда шаг 3 не сработал.
+        </p>
+      </div>
+
+      <div class="compare-card new">
+        <h3>Предложение: 3 фазы, 7 шагов</h3>
+        <ul class="step-list">
+          <li class="detect">
+            <span class="num">1.</span> Ищем лица (MediaPipe)
+            <span class="tag detect">ДЕТЕКЦИЯ</span>
+          </li>
+          <li class="detect">
+            <span class="num">2.</span> Нет лиц &rarr; ищем фигуру (HOG fallback)
+            <span class="tag detect">ДЕТЕКЦИЯ</span>
+          </li>
+          <li class="score">
+            <span class="num">3.</span> Считаем score по 7 критериям
+            <span class="tag score">ОЦЕНКА</span>
+          </li>
+          <li class="score">
+            <span class="num">4.</span> Экипировка &ne; штраф, посторонний предмет = штраф
+            <span class="tag score">ОЦЕНКА</span>
+          </li>
+          <li class="score">
+            <span class="num">5.</span> Fallback внутри серии (заимствование / упрощенный скоринг)
+            <span class="tag score">ОЦЕНКА</span>
+          </li>
+          <li class="select">
+            <span class="num">6.</span> Лучший score &rarr; selected, остальные &rarr; rejected
+            <span class="tag select">ВЫБОР</span>
+          </li>
+          <li class="select">
+            <span class="num">7.</span> 8 selected &rarr; печатный лист
+            <span class="tag select">ВЫБОР</span>
+          </li>
+        </ul>
+        <p style="margin-top:16px; font-size:13px; color:#34d399; line-height:1.5;">
+          <strong>Улучшения:</strong> чётко разделены 3 фазы (детекция &rarr; оценка &rarr; выбор),
+          каждый шаг делает ровно одну вещь, нет дублирования, fallback стал явным шагом.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════ TAB 3: MAPPING ════════════════ -->
+  <div id="mapping" class="panel">
+    <div class="mapping">
+      <div class="map-row header">
+        <span>Шаг</span>
+        <span>Файл / функция</span>
+        <span>Что делает</span>
+      </div>
+      <div class="map-row">
+        <span class="map-step" style="color:#a5b4fc;">IN</span>
+        <span><span class="map-file">watcher.py</span><br><span class="map-func">group_files_by_time()</span></span>
+        <span class="map-desc">Группировка фото в серии по mtime (gap &le; 3 сек)</span>
+      </div>
+      <div class="map-row">
+        <span class="map-step" style="color:#fbbf24;">1</span>
+        <span><span class="map-file">face_utils.py</span><br><span class="map-func">MediaPipeFaceAnalyzer.analyze_faces()</span></span>
+        <span class="map-desc">FaceDetector + FaceLandmarker. Bbox, yaw/pitch/roll, EAR, sharpness, goggle/mask/occlusion scores</span>
+      </div>
+      <div class="map-row">
+        <span class="map-step" style="color:#fbbf24;">2</span>
+        <span><span class="map-file">face_utils.py</span><br><span class="map-func">MediaPipeFaceAnalyzer.analyze_presence()</span></span>
+        <span class="map-desc">HOG People Detector. Только если лиц = 0. Ищет фигуры в центральной зоне</span>
+      </div>
+      <div class="map-row">
+        <span class="map-step" style="color:#fbbf24;">X</span>
+        <span><span class="map-file">analyzer.py:55-61</span><br><span class="map-func">subject_present = faces or (center_count &ge; N and confidence &ge; T)</span></span>
+        <span class="map-desc">Финальное решение: есть кто-то или пустое кресло</span>
+      </div>
+      <div class="map-row">
+        <span class="map-step" style="color:#60a5fa;">3</span>
+        <span><span class="map-file">scorer.py</span><br><span class="map-func">compute_overall_score()</span></span>
+        <span class="map-desc">Взвешенная сумма по 7 критериям. Три ветки: faces / person_present / empty</span>
+      </div>
+      <div class="map-row">
+        <span class="map-step" style="color:#60a5fa;">4</span>
+        <span><span class="map-file">scorer.py:42-48</span><br><span class="map-func">eyes_score с проверкой goggle/mask</span></span>
+        <span class="map-desc">Если goggle_score или mask_score &ge; 0.45 &rarr; eyes = 1.0; occlusion минус экипировка = штраф</span>
+      </div>
+      <div class="map-row">
+        <span class="map-step" style="color:#60a5fa;">5a</span>
+        <span><span class="map-file">selector.py</span><br><span class="map-func">_apply_series_face_fallback()</span></span>
+        <span class="map-desc">Кадр без лица заимствует оценки у ближайшего кадра с лицом (&times;0.9)</span>
+      </div>
+      <div class="map-row">
+        <span class="map-step" style="color:#60a5fa;">5b</span>
+        <span><span class="map-file">selector.py</span><br><span class="map-func">_apply_series_presence_fallback()</span></span>
+        <span class="map-desc">Серия без лиц, но с HOG-детекцией &rarr; упрощённый selection_score</span>
+      </div>
+      <div class="map-row">
+        <span class="map-step" style="color:#34d399;">6</span>
+        <span><span class="map-file">selector.py</span><br><span class="map-func">process_series() &rarr; max(score)</span></span>
+        <span class="map-desc">Лучший кадр &rarr; selected/, остальные &rarr; rejected/ с badge</span>
+      </div>
+      <div class="map-row">
+        <span class="map-step" style="color:#34d399;">7</span>
+        <span><span class="map-file">sheet_composer.py</span><br><span class="map-func">compose_pending_sheets()</span></span>
+        <span class="map-desc">8 selected фото &rarr; лист 2&times;4, фото в archive</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function showPanel(id) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
+</body>
+</html>

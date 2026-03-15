@@ -1,0 +1,5 @@
+interface:
+  display_name: "Kanatka Docs Maintainer"
+  short_description: "Maintain overview, progress, startup, CODEX."
+  default_prompt: "Use $kanatka-docs-maintainer to update the kanatka project dashboard and preserve session context."
+
