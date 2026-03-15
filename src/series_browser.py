@@ -1617,13 +1617,11 @@ def _kill_old_server(port: int) -> None:
         pass
 
 
-def start_browser(config: dict, port: int = 8787) -> threading.Thread:
-    """Start the series browser HTTP server and open the default browser."""
-    # Kill any leftover server from a previous session
+def start_server(config: dict, port: int = 8787) -> threading.Thread:
+    """Start the series browser HTTP server WITHOUT opening a browser."""
     _kill_old_server(port)
-
     import time
-    time.sleep(0.3)  # Give OS time to release the port
+    time.sleep(0.3)
 
     SeriesBrowserHandler.config = config
     SeriesBrowserHandler._series_cache = None
@@ -1633,6 +1631,11 @@ def start_browser(config: dict, port: int = 8787) -> threading.Thread:
 
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
+    return thread
 
+
+def start_browser(config: dict, port: int = 8787) -> threading.Thread:
+    """Start the series browser HTTP server and open the default browser."""
+    thread = start_server(config, port)
     webbrowser.open(f"http://127.0.0.1:{port}")
     return thread
