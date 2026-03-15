@@ -262,3 +262,24 @@
 - `.gitignore` обновлён: `build/work_main/`, `build/work_receiver/` вместо `build/` и `*.spec`.
 - Тесты: 34/34 (было 24, добавлено 10 новых).
 - Все три задачи Приоритета 1 закрыты — критический путь к поставке пройден.
+- **Баг авторизации в pywebview:** fetch POST /api/auth возвращал 200 + Set-Cookie, но pywebview/WebView2 не сохранял cookie из fetch-ответов. Решение: заменили fetch на HTML form POST + server-side 302 redirect — cookie гарантированно сохраняются при навигации.
+- Добавлен крестик (×) на модалку авторизации.
+
+## 2026-03-15 (упаковка, очистка, E2E тестирование)
+
+- **Очистка проекта:**
+  - `run_gui.bat` и `run_demo.bat` перенесены в `archive/` — больше не нужны.
+  - Оставлены только `run_app.bat` (основная программа) и `run_receiver.bat` (приёмник) для разработки.
+- **Инсталляторы Windows (Inno Setup):**
+  - Установлен Inno Setup 6 через winget.
+  - Созданы скрипты: `build/photoselector.iss`, `build/receiver.iss`.
+  - Собраны инсталляторы: `PhotoSelector_Setup.exe` (53 МБ), `KanatkaReceiver_Setup.exe` (15 МБ).
+  - Инсталляторы с русским языком, wizard «Next-Next-Finish», ярлыки на рабочий стол + Start Menu.
+  - Регистрация в «Программы и компоненты» — удаление через стандартный механизм Windows.
+- **Build script обновлён:** `build/build.py` теперь поддерживает `--installers` для сборки Inno Setup инсталляторов.
+- **E2E тестирование:**
+  - Создан `tools/e2e_test.py` — запуск обеих программ на одном компьютере.
+  - Сценарий: симулятор камеры → incoming → PhotoSelector → sheets → KanatkaReceiver.
+  - Режимы: `--fast` (быстрые задержки), `--headless` (без окон), `--duration` (время теста).
+- `.gitignore` обновлён: `installers/` добавлен.
+- 34/34 теста проходят.

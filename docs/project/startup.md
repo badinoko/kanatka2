@@ -6,7 +6,7 @@
 
 - Проект `kanatka2` — коммерческая программа отбора фото с горнолыжной канатки. Продукт на продажу.
 - Пользователь — **не программист**. Готовит инженера к поездке на горнолыжный курорт.
-- **Два EXE-файла** собраны: PhotoSelector (192 МБ) + KanatkaReceiver (40 МБ).
+- **Два инсталлятора Windows** собраны: PhotoSelector_Setup.exe (53 МБ) + KanatkaReceiver_Setup.exe (15 МБ).
 - Актуальный рабочий регламент: `CLAUDE.md` (полный справочник, обновлён 2026-03-15).
 - Дашборд и журнал:
   - `docs/project/overview.md` — задачи, приоритеты, статусы.
@@ -23,7 +23,7 @@
   - Временной браузер: показ соседних серий, batch-rescue.
   - Настройки инженера: 20+ параметров, ползунки, тултипы, пароль (дефолт 1234).
   - Мониторинг INBOX: Start/Stop кнопка, зелёный индикатор.
-  - Авторизация: cookie-сессия, смена пароля, first-login подсказка.
+  - Авторизация: HTML form POST + 302 redirect (pywebview-совместимо), cookie-сессия.
 - Экспорт: ZIP с фильтрацией по дате, автосинхронизация в сетевую папку.
 - Скоринг: `person_present` (40) + `sharpness` (35) + `exposure` (25) = 100.
 - Детекция: MediaPipe face → Haar upper body cascade fallback. 22/25 = 88%.
@@ -34,20 +34,26 @@
 - При первом запуске: диалог выбора папки, сохранение в `receiver_config.json`.
 - Без ML-зависимостей — только Pillow + watchdog.
 
-### Сборка (PyInstaller):
-- `build/build.py` — скрипт сборки (`--main`, `--receiver`, `--all`).
-- `build/kanatka.spec`, `build/receiver.spec` — спецификации.
-- Результат: `dist/PhotoSelector/`, `dist/KanatkaReceiver/`.
+### Сборка и инсталляторы:
+- `build/build.py` — полный скрипт сборки (`--main`, `--receiver`, `--installers`, `--all`).
+- PyInstaller: `build/kanatka.spec`, `build/receiver.spec`.
+- Inno Setup: `build/photoselector.iss`, `build/receiver.iss`.
+- Результат: `installers/PhotoSelector_Setup.exe`, `installers/KanatkaReceiver_Setup.exe`.
+
+### E2E тестирование:
+- `tools/e2e_test.py` — запуск обеих программ на одном компьютере с симулятором камеры.
+- `tools/camera_simulator.py` — подача фото из INBOX с реалистичными задержками.
+- Режимы: `--fast`, `--headless`, `--duration`.
 
 ### Тесты:
 - 34 теста, все проходят через `.venv/Scripts/python.exe`.
 
 ## Что осталось
 
-**Приоритет 2 — тестирование и документация:**
-- KAN-032: Улучшить симулятор камеры для E2E тестирования.
+**Приоритет 2 — документация для инженера:**
 - KAN-033: Deployment README для инженера.
 - KAN-034: Гайд по настройкам.
+- KAN-036: Публикация на GitHub.
 
 **Приоритет 3 — backlog:**
 - KAN-016: Системный трей.
@@ -69,8 +75,8 @@
 
 - Порт 8787: убивать старые процессы перед перезапуском.
 - Порт 8788: приёмник на отдельном порту.
+- pywebview/WebView2: Set-Cookie из fetch() не сохраняется — использовать HTML form POST + 302 redirect.
 - Тесты: только через `.venv/Scripts/python.exe`, не через системный Python.
 - В bash: `cd C:/Users/user/Projects/kanatka2 && .venv/Scripts/python.exe ...`.
-- `run_gui.bat` НЕ должен переопределять `HOME`/`USERPROFILE`.
 - `.venv` была создана для `kanatka`, pip может ставить пакеты не туда — использовать `--target`.
-- EXE-размер: PhotoSelector ~192 МБ, KanatkaReceiver ~40 МБ — это нормально.
+- Инсталляторы: PhotoSelector_Setup.exe ~53 МБ, KanatkaReceiver_Setup.exe ~15 МБ — это нормально.

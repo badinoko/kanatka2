@@ -34,6 +34,9 @@ AppData/
 archive/workdir_old_*/
 *.zip
 
+# Installers (built artifacts)
+installers/
+
 # Logs
 *.log
 
