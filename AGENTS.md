@@ -3,14 +3,15 @@
 Entry point for assistants in this repository.
 
 1. Read `CLAUDE.md`.
-2. Then read:
+2. If present, read `CODEX.md` as a short Codex-specific companion.
+3. Then read:
    - `docs/project/overview.md`
    - `docs/project/startup.md`
    - tail of `docs/project/progress.md`
-3. Do not mark work as finally complete without explicit user confirmation.
-4. Keep `docs/project/progress.md` append-only.
-5. Do not remove tasks from `docs/project/overview.md` without explicit user permission.
-6. When a task clearly matches a repo-local skill, read its `SKILL.md` before proceeding.
+4. Do not mark work as finally complete without explicit user confirmation.
+5. Keep `docs/project/progress.md` append-only.
+6. Do not remove tasks from `docs/project/overview.md` without explicit user permission.
+7. When a task clearly matches a repo-local skill, read its `SKILL.md` before proceeding.
 
 ## Repo-local skills
 
@@ -27,4 +28,3 @@ Entry point for assistants in this repository.
 - Session memory: `docs/project/progress.md`
 - Fast handoff context: `docs/project/startup.md`
 - Product intent and constraints: `TZ_PhotoSelector.md`
-
