@@ -235,3 +235,30 @@
 - **startup.md полностью переписан:** актуальный handoff с планом следующей сессии, рекомендациями, ловушками.
 - **overview.md обновлён:** Architecture, Product Vision, «Чего не хватает» — всё актуализировано.
 - Пользователь хочет публиковать на GitHub под `badinoko/kanatka2` (публичный репозиторий).
+
+## 2026-03-15 (KAN-030 + KAN-031 + KAN-019 — критический путь к поставке)
+
+- **KAN-030 DONE:** Встроенное окно (pywebview) для основной программы.
+  - Создан `src/app.py` — pywebview launcher (WebView2/Edge на Windows).
+  - В `series_browser.py` выделена функция `start_server()` (без открытия браузера) из `start_browser()`.
+  - `main.py` обновлён: команда по умолчанию теперь `launch_app` (pywebview), `gui` сохранён как fallback.
+  - `run_app.bat` — батник для запуска через pywebview.
+  - Окно: 1280x800, заголовок «PhotoSelector — Канатка», resizable, min 800x600.
+- **KAN-031 DONE:** Программа-приёмник для типографии.
+  - Создана директория `receiver/` с 4 файлами:
+    - `receiver_app.py` — pywebview entry point, порт 8788.
+    - `receiver_server.py` — HTTP-сервер (stdlib), страница с автообновлением.
+    - `receiver_watcher.py` — SheetQueue + watchdog для мониторинга папки.
+    - `receiver_config.json` — настройки (watched_folder, port, refresh).
+  - При первом запуске — диалог выбора папки (tkinter fallback).
+  - UI: сетка карточек с превью листов, полноэкранный просмотр по клику, auto-refresh каждые 3 сек.
+  - `run_receiver.bat` — батник для запуска.
+- **KAN-019 DONE:** Упаковка в 2 EXE через PyInstaller.
+  - `build/kanatka.spec` — основная программа (+ models/).
+  - `build/receiver.spec` — приёмник (без ML зависимостей).
+  - `build/build.py` — скрипт сборки (`--main`, `--receiver`, `--all`).
+  - Результат: PhotoSelector 192 МБ, KanatkaReceiver 40 МБ — оба EXE собираются успешно.
+- Новая зависимость: `pywebview==6.1` (+ pythonnet, clr_loader, bottle, proxy_tools).
+- `.gitignore` обновлён: `build/work_main/`, `build/work_receiver/` вместо `build/` и `*.spec`.
+- Тесты: 34/34 (было 24, добавлено 10 новых).
+- Все три задачи Приоритета 1 закрыты — критический путь к поставке пройден.
