@@ -482,25 +482,29 @@ function confirmRescue(formId, fileName) {
 function authLogin() {
     var pwd = document.getElementById('auth-password');
     if (!pwd) return;
-    var xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/auth', true);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.onload = function() {
-        if (xhr.status === 200) {
-            var resp = JSON.parse(xhr.responseText);
-            if (resp.first_login) {
-                location.href = '/settings#change-password';
-            } else {
-                location.reload();
-            }
+    var errEl = document.getElementById('auth-error');
+    fetch('/api/auth', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({password: pwd.value}),
+        credentials: 'same-origin'
+    }).then(function(resp) {
+        if (resp.ok) {
+            return resp.json().then(function(data) {
+                if (data.first_login) {
+                    location.href = '/settings#change-password';
+                } else {
+                    location.reload();
+                }
+            });
         } else {
-            var err = document.getElementById('auth-error');
-            if (err) { err.textContent = 'Неверный пароль'; err.className = 'auth-error visible'; }
+            if (errEl) { errEl.textContent = 'Неверный пароль'; errEl.className = 'auth-error visible'; }
             pwd.value = '';
             pwd.focus();
         }
-    };
-    xhr.send(JSON.stringify({password: pwd.value}));
+    }).catch(function(e) {
+        if (errEl) { errEl.textContent = 'Ошибка соединения: ' + e.message; errEl.className = 'auth-error visible'; }
+    });
 }
 function authKeydown(e) { if (e.key === 'Enter') authLogin(); }
 
@@ -513,11 +517,13 @@ function changePassword() {
     if (!cur || !nw) { msg.textContent = 'Заполните все поля'; msg.style.color = '#e74c3c'; return; }
     if (nw !== conf) { msg.textContent = 'Пароли не совпадают'; msg.style.color = '#e74c3c'; return; }
     if (nw.length < 4) { msg.textContent = 'Минимум 4 символа'; msg.style.color = '#e74c3c'; return; }
-    var xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/change-password', true);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.onload = function() {
-        if (xhr.status === 200) {
+    fetch('/api/change-password', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({current: cur, new_password: nw}),
+        credentials: 'same-origin'
+    }).then(function(resp) {
+        if (resp.ok) {
             msg.textContent = 'Пароль изменён!'; msg.style.color = '#2ecc71';
             document.getElementById('pw-current').value = '';
             document.getElementById('pw-new').value = '';
@@ -525,17 +531,20 @@ function changePassword() {
         } else {
             msg.textContent = 'Неверный текущий пароль'; msg.style.color = '#e74c3c';
         }
-    };
-    xhr.send(JSON.stringify({current: cur, new_password: nw}));
+    }).catch(function(e) {
+        msg.textContent = 'Ошибка: ' + e.message; msg.style.color = '#e74c3c';
+    });
 }
 
 // Monitor control
 function toggleMonitor(action) {
-    var xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/monitor', true);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.onload = function() { location.reload(); };
-    xhr.send(JSON.stringify({action: action}));
+    fetch('/api/monitor', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action: action}),
+        credentials: 'same-origin'
+    }).then(function() { location.reload(); })
+    .catch(function(e) { alert('Ошибка: ' + e.message); });
 }
 
 // View switcher
@@ -1198,12 +1207,14 @@ function saveSettings() {
             data[inp.name] = inp.value;
         }
     }
-    var xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/settings', true);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.onload = function() {
+    fetch('/api/settings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data),
+        credentials: 'same-origin'
+    }).then(function(resp) {
         var msg = document.getElementById('save-msg');
-        if (xhr.status === 200) {
+        if (resp.ok) {
             msg.textContent = 'Сохранено!';
             msg.className = 'save-msg visible';
             setTimeout(function() { msg.className = 'save-msg'; }, 3000);
@@ -1212,8 +1223,12 @@ function saveSettings() {
             msg.style.color = '#e74c3c';
             msg.className = 'save-msg visible';
         }
-    };
-    xhr.send(JSON.stringify(data));
+    }).catch(function(e) {
+        var msg = document.getElementById('save-msg');
+        msg.textContent = 'Ошибка: ' + e.message;
+        msg.style.color = '#e74c3c';
+        msg.className = 'save-msg visible';
+    });
 }
 """
 
