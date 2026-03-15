@@ -380,7 +380,10 @@ body { font-family: -apple-system, 'Segoe UI', Arial, sans-serif; background: #f
 .auth-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5);
                z-index: 2000; display: flex; justify-content: center; align-items: center; }
 .auth-modal { background: #fff; border-radius: 16px; padding: 32px; width: 400px; max-width: 90%;
-             box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+             box-shadow: 0 8px 32px rgba(0,0,0,0.3); position: relative; }
+.auth-close { position: absolute; top: 12px; right: 16px; font-size: 28px; color: #999;
+              text-decoration: none; line-height: 1; }
+.auth-close:hover { color: #333; }
 .auth-modal h2 { font-size: 20px; margin-bottom: 8px; }
 .auth-modal .auth-hint { font-size: 14px; color: #666; margin-bottom: 20px; }
 .auth-modal input[type=password] { width: 100%; padding: 12px 16px; border: 2px solid #ddd; border-radius: 8px;
@@ -1110,7 +1113,7 @@ _SETTINGS_SCHEMA: list[tuple[str, str, list[tuple]]] = [
 ]
 
 
-def _render_auth_modal(config: dict) -> str:
+def _render_auth_modal(config: dict, error: str = "") -> str:
     """Render the login modal for settings access."""
     # Detect first run: password is still the default
     is_default_pw = config.get("auth", {}).get("settings_password", "1234") == "1234"
@@ -1123,14 +1126,22 @@ def _render_auth_modal(config: dict) -> str:
     else:
         hint = '<div class="auth-hint">Настройки доступны только инженеру. Введите пароль для входа.</div>'
 
+    error_html = ""
+    if error:
+        error_html = f'<div class="auth-error visible">{error}</div>'
+
+    # Use a real HTML form (not fetch) so Set-Cookie works reliably in pywebview/WebView2
     body = (
         '<div class="auth-overlay">'
         '<div class="auth-modal">'
+        '<a href="/" class="auth-close" title="Закрыть">&times;</a>'
         '<h2>&#128274; Доступ к настройкам</h2>'
         + hint +
-        '<input type="password" id="auth-password" placeholder="Пароль" onkeydown="authKeydown(event)" autofocus>'
-        '<button class="auth-btn" onclick="authLogin()">Войти</button>'
-        '<div id="auth-error" class="auth-error"></div>'
+        '<form method="POST" action="/api/auth-form">'
+        '<input type="password" name="password" placeholder="Пароль" autofocus>'
+        '<button type="submit" class="auth-btn">Войти</button>'
+        '</form>'
+        + error_html +
         '</div></div>'
     )
     return _page("Kanatka — Вход", body, active_nav="settings")
@@ -1387,6 +1398,27 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
         else:
             self._send_json({"error": "wrong password"}, 403)
 
+    def _handle_auth_form(self, body: str) -> None:
+        """Handle HTML form POST login — redirect-based auth for pywebview compatibility."""
+        params = parse_qs(body)
+        password = params.get("password", [""])[0]
+        stored = self.config.get("auth", {}).get("settings_password", "1234")
+
+        if password == stored:
+            token = _make_token()
+            _auth_tokens.add(token)
+            is_default = (stored == "1234")
+            redirect_to = "/settings#change-password" if is_default else "/settings"
+            self.send_response(302)
+            self.send_header("Location", redirect_to)
+            self.send_header("Set-Cookie", f"kanatka_auth={token}; Path=/; HttpOnly; SameSite=Strict")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+        else:
+            # Wrong password — show auth modal again with error
+            html = _render_auth_modal(self.config, error="Неверный пароль")
+            self._send_html(html)
+
     def _handle_change_password(self, body: str) -> None:
         """Change the settings password."""
         # Require auth
@@ -1548,6 +1580,10 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/auth":
             self._handle_auth(body)
+            return
+
+        if parsed.path == "/api/auth-form":
+            self._handle_auth_form(body)
             return
 
         if parsed.path == "/api/change-password":
