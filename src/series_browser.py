@@ -1841,6 +1841,11 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
                 self.config[section][key] = str(value)
 
         save_config(self.config)
+        # Re-resolve relative paths against PROJECT_ROOT (same as load_config)
+        from config_utils import _resolve_path
+        for key, value in self.config.get("paths", {}).items():
+            if isinstance(value, str):
+                self.config["paths"][key] = _resolve_path(value)
         ensure_runtime_directories(self.config)
         self._send_json({"status": "ok"})
 
