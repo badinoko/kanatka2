@@ -41,6 +41,7 @@ def launch_app(config_path: str | None = None) -> None:
         height=WINDOW_HEIGHT,
         resizable=True,
         min_size=(800, 600),
+        confirm_close=True,
     )
     webview.start()
     logger.info("Приложение завершено")

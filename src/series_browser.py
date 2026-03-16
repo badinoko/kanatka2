@@ -441,9 +441,10 @@ def _series_has_live_assets(series: dict, config: dict) -> bool:
     photos = series.get("photos", [])
 
     if selected_file:
-        selected_candidate = _resolve_runtime_path(config, "output_selected") / selected_file
-        if selected_candidate.exists():
-            return True
+        for path_key in ("output_selected", "output_archive"):
+            candidate = _resolve_runtime_path(config, path_key) / selected_file
+            if candidate.exists():
+                return True
 
     for photo in photos:
         if _find_existing_photo_for_series(photo, series_name, config, selected_file=selected_file):
@@ -473,9 +474,10 @@ def _resolve_series_card_thumb(series: dict, config: dict) -> Path | None:
     selected_file = series.get("selected_file", "")
     series_name = series.get("series", "")
     if selected_file:
-        selected_candidate = _resolve_runtime_path(config, "output_selected") / selected_file
-        if selected_candidate.exists():
-            return selected_candidate
+        for path_key in ("output_selected", "output_archive"):
+            candidate = _resolve_runtime_path(config, path_key) / selected_file
+            if candidate.exists():
+                return candidate
     for photo in series.get("photos", []):
         existing = _find_existing_photo_for_series(photo, series_name, config, selected_file=selected_file)
         if existing:
@@ -1046,6 +1048,16 @@ document.addEventListener('keydown', function(e) {
 });
 
 // Monitor control
+function _setMonitorBtnState(active) {
+    var area = document.getElementById('monitor-btn-area');
+    if (!area) return;
+    if (active) {
+        area.innerHTML = '<button onclick="toggleMonitor(\'stop\')" style="background:#e74c3c; color:#fff; border:none; padding:8px 20px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer">\u041e\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c</button>';
+    } else {
+        area.innerHTML = '<button onclick="toggleMonitor(\'start\')" style="background:#2ecc71; color:#fff; border:none; padding:8px 20px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer">\u25b6 \u0417\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c</button>';
+    }
+}
+
 function toggleMonitor(action) {
     fetch('/api/monitor', {
         method: 'POST',
@@ -1057,6 +1069,7 @@ function toggleMonitor(action) {
             if (action === 'start') {
                 if (!resp.ok) { showToast('\u041e\u0448\u0438\u0431\u043a\u0430: ' + (data.error || 'HTTP ' + resp.status), 'err'); return; }
                 if (!data.active) { showToast('\u041c\u043e\u043d\u0438\u0442\u043e\u0440\u0438\u043d\u0433 \u043d\u0435 \u0437\u0430\u043f\u0443\u0441\u0442\u0438\u043b\u0441\u044f: ' + (data.error || ''), 'err'); return; }
+                _setMonitorBtnState(true);  // update button immediately
                 // Launch inbox simulator and show test-mode notice
                 fetch('/api/simulate', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'})
                     .then(function(r) { return r.json(); })
@@ -1371,7 +1384,7 @@ def _page(title: str, body: str, stats: str = "", active_nav: str = "series",
         '<button onclick="closeZipModal()" style="padding:8px 20px; border:1px solid #ddd; border-radius:8px; background:#fff; cursor:pointer">Отмена</button>'
         '<button id="zip-run-btn" onclick="runZipExport()" style="padding:8px 20px; border:none; border-radius:8px; background:#3498db; color:#fff; cursor:pointer; font-weight:600">Создать ZIP</button>'
         '</div></div></div>\n'
-        '<div id="readme-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%;'
+        '<div id="readme-modal" onclick="if(event.target===this)closeReadme()" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%;'
         ' background:rgba(0,0,0,0.6); z-index:9999; align-items:center; justify-content:center">'
         '<div style="background:#fff; border-radius:16px; padding:28px 32px; max-width:720px; width:94%;'
         ' max-height:82vh; display:flex; flex-direction:column">'
@@ -1588,8 +1601,8 @@ def _render_series_list(all_series: list[dict], config: dict, page: int = 1, fil
             + (f'<span style="color:#888; font-size:13px; margin-left:12px">Последнее: {mon["last_activity"]}</span>'
                if mon["last_activity"] else "")
             + '</div>'
-            '<button onclick="toggleMonitor(\'stop\')" style="background:#e74c3c; color:#fff; border:none; '
-            'padding:8px 20px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer">Остановить</button>'
+            '<div id="monitor-btn-area"><button onclick="toggleMonitor(\'stop\')" style="background:#e74c3c; color:#fff; border:none; '
+            'padding:8px 20px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer">Остановить</button></div>'
             '</div>'
         )
     else:
@@ -1602,8 +1615,8 @@ def _render_series_list(all_series: list[dict], config: dict, page: int = 1, fil
             '<span style="color:#666; font-size:14px">&#128247; Автономный режим: мониторинг входящих фото</span>'
             + err_html
             + '</div>'
-            '<button onclick="toggleMonitor(\'start\')" style="background:#2ecc71; color:#fff; border:none; '
-            'padding:8px 20px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer">Запустить</button>'
+            '<div id="monitor-btn-area"><button onclick="toggleMonitor(\'start\')" style="background:#2ecc71; color:#fff; border:none; '
+            'padding:8px 20px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer">&#9654; Запустить</button></div>'
             '</div>'
         )
 
