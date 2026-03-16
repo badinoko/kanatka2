@@ -42,7 +42,7 @@ def check_disk_space(config: dict) -> dict:
     else:
         status = "ok"
 
-    return {"free_gb": free_gb, "status": status}
+    return {"free_gb": free_gb, "total_gb": round(usage.total / (1024 ** 3), 1), "status": status}
 
 
 def group_files_by_time(file_paths: list[Path], max_gap_seconds: float) -> list[list[Path]]:

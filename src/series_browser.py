@@ -659,9 +659,14 @@ body { font-family: -apple-system, 'Segoe UI', Arial, sans-serif; background: #f
 .settings-btn:hover { background: rgba(255,255,255,0.14); color: #fff; transform: rotate(30deg); }
 
 /* Disk indicator */
-.disk-indicator { display: flex; align-items: center; gap: 5px; color: rgba(255,255,255,0.65);
-                  font-size: 13px; white-space: nowrap; }
-.disk-indicator .icon { font-size: 16px; }
+.disk-indicator { display: flex; align-items: center; gap: 7px; color: rgba(255,255,255,0.65);
+                  font-size: 12px; white-space: nowrap; }
+.disk-bar-track { width: 64px; height: 8px; background: rgba(255,255,255,0.18);
+                  border-radius: 4px; overflow: hidden; flex-shrink: 0; }
+.disk-bar-fill { height: 100%; width: 0%; border-radius: 4px; background: #2ecc71;
+                 transition: width 0.5s, background 0.5s; }
+.disk-bar-fill.warn { background: #f39c12; }
+.disk-bar-fill.crit { background: #e74c3c; }
 .stats-badge { color: rgba(255,255,255,0.55); font-size: 12px; white-space: nowrap; }
 
 /* Responsive: hide stats text at narrow widths */
@@ -1295,23 +1300,22 @@ function updateDiskHealth() {
     fetch('/api/health', {credentials: 'same-origin'})
     .then(function(r) { return r.json().catch(function() { return {}; }); })
     .then(function(data) {
-        var iconEl = document.getElementById('disk-indicator-icon');
+        var fillEl = document.getElementById('disk-bar-fill');
         var textEl = document.getElementById('disk-indicator-text');
-        if (!iconEl || !textEl) return;
+        var wrapEl = document.getElementById('disk-indicator-wrap');
+        if (!textEl) return;
         var freeText = data.free_gb != null ? (data.free_gb + '\u00a0\u0413\u0411') : '...';
-        if (data.status === 'critical') {
-            iconEl.textContent = '\uD83D\uDD34';
-            textEl.textContent = freeText;
-            iconEl.parentElement.style.color = '#e74c3c';
-        } else if (data.status === 'warning') {
-            iconEl.textContent = '\u26A0';
-            textEl.textContent = freeText;
-            iconEl.parentElement.style.color = '#f39c12';
-        } else {
-            iconEl.textContent = '\uD83D\uDCBE';
-            textEl.textContent = freeText;
-            iconEl.parentElement.style.color = '';
+        textEl.textContent = freeText;
+        if (fillEl) {
+            var pct = (data.total_gb && data.free_gb != null)
+                ? Math.round((1 - data.free_gb / data.total_gb) * 100) : 0;
+            fillEl.style.width = pct + '%';
+            var cls = 'disk-bar-fill';
+            if (data.status === 'critical') cls += ' crit';
+            else if (data.status === 'warning') cls += ' warn';
+            fillEl.className = cls;
         }
+        if (wrapEl) wrapEl.title = freeText + ' \u0441\u0432\u043e\u0431\u043e\u0434\u043d\u043e';
     }).catch(function() {});
 }
 """
@@ -1397,9 +1401,10 @@ def _page(title: str, body: str, stats: str = "", active_nav: str = "series",
         '  <div class="nav-spacer"></div>\n'
         '  <div class="nav-right">\n'
         f'    {view_switcher_html}\n'
-        '    <div class="disk-indicator">'
-        '<span class="icon" id="disk-indicator-icon">&#128190;</span>'
-        '<span class="disk-text" id="disk-indicator-text">...</span></div>\n'
+        '    <div class="disk-indicator" id="disk-indicator-wrap">'
+        '<div class="disk-bar-track"><div class="disk-bar-fill" id="disk-bar-fill"></div></div>'
+        '<span class="disk-text" id="disk-indicator-text">...</span>'
+        '</div>\n'
         f'    {stats_html}\n'
         f'    <a href="/settings" class="settings-btn" title="Настройки">&#9881;</a>\n'
         '  </div>\n'
