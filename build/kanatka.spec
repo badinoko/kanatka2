@@ -8,10 +8,22 @@ project_root = Path(SPECPATH).parent
 src_dir = project_root / "src"
 models_dir = project_root / "models"
 
+# Find mediapipe site-packages dir to locate libmediapipe.dll
+import site
+_sp = site.getsitepackages()
+_mp_c_dir = None
+for _d in _sp:
+    _candidate = Path(_d) / "mediapipe" / "tasks" / "c"
+    if (_candidate / "libmediapipe.dll").exists():
+        _mp_c_dir = _candidate
+        break
+
 a = Analysis(
     [str(src_dir / "app.py")],
     pathex=[str(src_dir)],
-    binaries=[],
+    binaries=(
+        [(str(_mp_c_dir / "libmediapipe.dll"), "mediapipe/tasks/c")] if _mp_c_dir else []
+    ),
     datas=[
         (str(src_dir / "config.json"), "."),
         (str(models_dir / "face_landmarker.task"), "models"),
@@ -21,6 +33,14 @@ a = Analysis(
         "mediapipe",
         "mediapipe.python",
         "mediapipe.python._framework_bindings",
+        "mediapipe.tasks",
+        "mediapipe.tasks.c",
+        "mediapipe.tasks.python",
+        "mediapipe.tasks.python.core",
+        "mediapipe.tasks.python.core.mediapipe_c_bindings",
+        "mediapipe.tasks.python.core.mediapipe_c_utils",
+        "mediapipe.tasks.python.core.serial_dispatcher",
+        "mediapipe.tasks.python.vision",
         "cv2",
         "PIL",
         "PIL.Image",
