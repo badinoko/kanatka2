@@ -10,7 +10,7 @@
 4. `docs/project/roadmap.md`
 5. `docs/project/startup.md`
 6. tail `docs/project/progress.md`
-7. `docs/project/kan-038-score-design-brief.md` if работа идёт по score
+7. `archive/project/2026-03-15/kan-038-score-design-brief.md` if работа идёт по score
 
 ## Quick Context
 
@@ -31,8 +31,8 @@
 - `docs/project/overview.md` — короткий дашборд задач и проблем.
 - `docs/project/roadmap.md` — развёрнутая картина продукта и этапов.
 - `docs/project/startup.md` — этот файл.
-- `docs/project/progress.md` — append-only журнал.
-- `docs/project/kan-038-score-design-brief.md` — технический brief для следующего score-шага.
+- `docs/project/progress.md` — append-only журнал (полная история до v2.0 → `archive/project/2026-03-16/progress_full_v2.md`).
+- `archive/project/2026-03-15/kan-038-score-design-brief.md` — технический brief по score (архивирован, KAN-038 DONE).
 
 Одноразовые обсужденческие документы 2026-03-15 вынесены в:
 - `archive/project/2026-03-15/`
@@ -74,7 +74,7 @@
    - `docs/project/roadmap.md`
    - `docs/project/startup.md`
    - tail `docs/project/progress.md`
-   - `docs/project/kan-038-score-design-brief.md`
+   - `archive/project/2026-03-15/kan-038-score-design-brief.md`
 2. Принять как исходные условия:
    - основной workflow живёт на нижнем ПК;
    - оператору не нужен live-photo stream;

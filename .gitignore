@@ -7,6 +7,7 @@ dist/
 # PyInstaller work directories
 build/work_main/
 build/work_receiver/
+build/pyinstaller_work/
 
 # Virtual environment
 .venv/
