@@ -2148,7 +2148,6 @@ def _render_sheets_gallery(config: dict) -> str:
 
     js = r"""
 function printSheet(name) {
-    if (!confirm('Отправить лист ' + name + ' на печать?')) return;
     fetch('/api/print-sheet', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
