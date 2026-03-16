@@ -195,8 +195,8 @@ def _start_monitoring(config: dict) -> None:
         import re as _re
         _log_dir = Path(config["paths"]["log_dir"])
         _max_idx = 0
-        for _rp in _log_dir.glob("ser*_report.json"):
-            _m = _re.match(r"ser(\d+)_report", _rp.stem)
+        for _rp in _log_dir.glob("s_*_report.json"):
+            _m = _re.match(r"s_(\d+)_report", _rp.stem)
             if _m:
                 _max_idx = max(_max_idx, int(_m.group(1)))
         series_idx = _max_idx + 1
@@ -276,9 +276,9 @@ def _check_auth_cookie(cookie_header: str | None) -> bool:
 # ---------------------------------------------------------------------------
 
 def load_all_series(log_dir: Path) -> list[dict]:
-    """Read all ser*_report.json files and return sorted list of series."""
+    """Read all s_*_report.json files and return sorted list of series."""
     series: list[dict] = []
-    for report_path in sorted(log_dir.glob("ser*_report.json"), reverse=True):
+    for report_path in sorted(log_dir.glob("s_*_report.json"), reverse=True):
         try:
             data = json.loads(report_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
@@ -365,7 +365,7 @@ def _count_ambiguous_series() -> int:
     except Exception:
         return 0
     count = 0
-    for report_path in log_dir.glob("ser*_report.json"):
+    for report_path in log_dir.glob("s_*_report.json"):
         try:
             data = json.loads(report_path.read_text(encoding="utf-8"))
             if data.get("status") == "ambiguous_manual_review":

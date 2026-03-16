@@ -39,27 +39,27 @@ class LoadAllSeriesTests(unittest.TestCase):
     def test_loads_reports_sorted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             log_dir = Path(tmp)
-            (log_dir / "ser002_report.json").write_text(
-                json.dumps({"series": "SER002", "status": "selected", "photos": []}),
+            (log_dir / "s_2_report.json").write_text(
+                json.dumps({"series": "S_2", "status": "selected", "photos": []}),
                 encoding="utf-8",
             )
-            (log_dir / "ser001_report.json").write_text(
-                json.dumps({"series": "SER001", "status": "discarded_empty", "photos": []}),
+            (log_dir / "s_1_report.json").write_text(
+                json.dumps({"series": "S_1", "status": "discarded_empty", "photos": []}),
                 encoding="utf-8",
             )
 
             result = load_all_series(log_dir)
 
             self.assertEqual(len(result), 2)
-            self.assertEqual(result[0]["series"], "SER002")
-            self.assertEqual(result[1]["series"], "SER001")
+            self.assertEqual(result[0]["series"], "S_2")
+            self.assertEqual(result[1]["series"], "S_1")
 
     def test_skips_invalid_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             log_dir = Path(tmp)
-            (log_dir / "ser001_report.json").write_text("not json", encoding="utf-8")
-            (log_dir / "ser002_report.json").write_text(
-                json.dumps({"series": "SER002", "status": "selected", "photos": []}),
+            (log_dir / "s_1_report.json").write_text("not json", encoding="utf-8")
+            (log_dir / "s_2_report.json").write_text(
+                json.dumps({"series": "S_2", "status": "selected", "photos": []}),
                 encoding="utf-8",
             )
 
@@ -79,10 +79,10 @@ class RescuePhotoTests(unittest.TestCase):
             source.write_bytes(b"\xff\xd8fake jpeg")
             selected = Path(tmp) / "selected"
 
-            dest = rescue_photo(source, selected, "SER005")
+            dest = rescue_photo(source, selected, "S_5")
 
             self.assertTrue(dest.exists())
-            self.assertEqual(dest.name, "SER005_photo.jpg")
+            self.assertEqual(dest.name, "S_5_photo.jpg")
             self.assertEqual(dest.read_bytes(), b"\xff\xd8fake jpeg")
 
     def test_creates_selected_dir(self) -> None:
@@ -91,7 +91,7 @@ class RescuePhotoTests(unittest.TestCase):
             source.write_bytes(b"data")
             selected = Path(tmp) / "new_dir" / "selected"
 
-            dest = rescue_photo(source, selected, "SER001")
+            dest = rescue_photo(source, selected, "S_1")
 
             self.assertTrue(selected.exists())
             self.assertTrue(dest.exists())
@@ -108,15 +108,15 @@ class RescueBatchTests(unittest.TestCase):
             selected = Path(tmp) / "selected"
             config = _make_config(tmp)
             photos = [
-                {"path": str(incoming / "a.jpg"), "series": "SER001"},
-                {"path": str(incoming / "b.jpg"), "series": "SER002"},
+                {"path": str(incoming / "a.jpg"), "series": "S_1"},
+                {"path": str(incoming / "b.jpg"), "series": "S_2"},
             ]
 
             copied = rescue_batch(photos, selected, config)
 
             self.assertEqual(len(copied), 2)
-            self.assertTrue((selected / "SER001_a.jpg").exists())
-            self.assertTrue((selected / "SER002_b.jpg").exists())
+            self.assertTrue((selected / "S_1_a.jpg").exists())
+            self.assertTrue((selected / "S_2_b.jpg").exists())
 
     def test_batch_skips_already_copied(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -126,22 +126,22 @@ class RescueBatchTests(unittest.TestCase):
 
             selected = Path(tmp) / "selected"
             selected.mkdir()
-            (selected / "SER001_a.jpg").write_bytes(b"already_there")
+            (selected / "S_1_a.jpg").write_bytes(b"already_there")
 
             config = _make_config(tmp)
-            photos = [{"path": str(incoming / "a.jpg"), "series": "SER001"}]
+            photos = [{"path": str(incoming / "a.jpg"), "series": "S_1"}]
 
             copied = rescue_batch(photos, selected, config)
 
             self.assertEqual(len(copied), 0)
             # Original file is untouched
-            self.assertEqual((selected / "SER001_a.jpg").read_bytes(), b"already_there")
+            self.assertEqual((selected / "S_1_a.jpg").read_bytes(), b"already_there")
 
     def test_batch_skips_missing_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             selected = Path(tmp) / "selected"
             config = _make_config(tmp)
-            photos = [{"path": "/no/such/file.jpg", "series": "SER001"}]
+            photos = [{"path": "/no/such/file.jpg", "series": "S_1"}]
 
             copied = rescue_batch(photos, selected, config)
 
@@ -175,8 +175,8 @@ class MonitoringStartupTests(unittest.TestCase):
 class SeriesDetailRenderTests(unittest.TestCase):
     def test_series_detail_contains_lightbox_payload_and_controls(self) -> None:
         series = {
-            "series": "SER001",
-            "selected_file": "SER001_frame1.jpg",
+            "series": "S_1",
+            "selected_file": "S_1_frame1.jpg",
             "photos": [
                 {
                     "file_name": "frame1.jpg",
@@ -211,10 +211,10 @@ class SeriesDetailRenderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             selected_dir = Path(tmp) / "selected"
             selected_dir.mkdir()
-            (selected_dir / "SER001_frame1.jpg").write_bytes(b"\xff\xd8fake jpeg")
+            (selected_dir / "S_1_frame1.jpg").write_bytes(b"\xff\xd8fake jpeg")
             html = _render_series_detail(series, selected_dir, _make_config(tmp))
 
-        self.assertIn('data-lightbox-group="series-SER001"', html)
+        self.assertIn('data-lightbox-group="series-S_1"', html)
         self.assertIn('data-lightbox-payload=', html)
         self.assertIn('class="lightbox-nav prev"', html)
         self.assertIn('id="debug-toggle"', html)
@@ -222,7 +222,7 @@ class SeriesDetailRenderTests(unittest.TestCase):
 
     def test_series_detail_history_disables_rescue_for_missing_files(self) -> None:
         series = {
-            "series": "SER099",
+            "series": "S_99",
             "selected_file": "",
             "photos": [
                 {
@@ -277,13 +277,13 @@ class SeriesListRenderTests(unittest.TestCase):
 
             series = [
                 {
-                    "series": "SER001",
+                    "series": "S_1",
                     "status": "selected",
                     "selected_file": "",
                     "photos": [{"file_name": "live.jpg", "file_path": str(live_path)}],
                 },
                 {
-                    "series": "SER002",
+                    "series": "S_2",
                     "status": "selected",
                     "selected_file": "",
                     "photos": [{"file_name": "gone.jpg", "file_path": "C:/missing/gone.jpg"}],
@@ -294,10 +294,10 @@ class SeriesListRenderTests(unittest.TestCase):
             history_html = _render_series_list(series, config, page=1, filter_status="history")
 
         self.assertIn("Рабочие (1)", working_html)
-        self.assertNotIn("/series/SER002", working_html)
-        self.assertIn("/series/SER002", history_html)
+        self.assertNotIn("/series/S_2", working_html)
+        self.assertIn("/series/S_2", history_html)
         self.assertIn("Файлы очищены", history_html)
-        self.assertNotIn("/nearby/SER002", history_html)
+        self.assertNotIn("/nearby/S_2", history_html)
 
 
 if __name__ == "__main__":

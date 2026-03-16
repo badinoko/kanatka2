@@ -25,7 +25,7 @@ def process_series(
     if not series_files:
         return {"series_index": series_index, "status": "empty", "selected_file": None, "series_size": 0}
 
-    series_name = f"SER{series_index:03d}"
+    series_name = f"S_{series_index}"
     results: list[dict] = []
     annotations_dir = Path(config["paths"]["annotated_dir"]) / series_name
 

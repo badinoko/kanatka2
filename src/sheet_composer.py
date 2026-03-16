@@ -59,7 +59,7 @@ def _save_sheet_meta(output_path: Path, batch: list[Path], columns: int) -> None
     for pos, image_path in enumerate(batch):
         score_data = load_score_overlay_data(image_path)
         name = image_path.name
-        # Extract series prefix (e.g. "SER001" from "SER001_img.jpg")
+        # Extract series prefix (e.g. "S_1" from "S_1_img.jpg")
         series = name.split("_")[0] if "_" in name else name
         photos.append({
             "position": pos,
@@ -177,7 +177,7 @@ def _load_score_data_from_reports(image_path: Path) -> dict[str, object]:
     if not log_dir.exists():
         return {"score": None, "score_breakdown": None, "scoring_weights": None, "raw_score": None}
 
-    for report_path in sorted(log_dir.glob("ser*_report.json")):
+    for report_path in sorted(log_dir.glob("s_*_report.json")):
         try:
             report = json.loads(report_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
