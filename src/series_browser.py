@@ -1,8 +1,7 @@
 """Web-based series browser for reviewing and rescuing photos.
 
 Runs a local HTTP server (stdlib only, no dependencies) that shows
-all processed series with thumbnails, scores, and a temporal browser
-for finding nearby photos when the print shop detects an error.
+all processed series with thumbnails, scores, and rescue controls.
 """
 from __future__ import annotations
 
@@ -303,7 +302,10 @@ def rescue_batch(
     selected_dir: Path,
     config: dict,
 ) -> list[Path]:
-    """Copy multiple photos to selected/ and sync to network if enabled.
+    """Rescue multiple photos into the selected directory.
+
+    Utility function for batch rescue operations. Kept for testing and potential
+    future use; the /rescue-batch HTTP endpoint was removed in KAN-081.
 
     Each item in photos: {"path": str, "series": str}
     Returns list of destination paths.
@@ -674,8 +676,6 @@ body { font-family: -apple-system, 'Segoe UI', Arial, sans-serif; background: #f
 .breadcrumb { margin-bottom: 16px; font-size: 14px; }
 .breadcrumb a { color: #4a6fa5; text-decoration: none; }
 .breadcrumb a:hover { text-decoration: underline; }
-.breadcrumb .nearby-btn, .breadcrumb .nearby-btn:visited { color: #fff !important; }
-.breadcrumb .nearby-btn:hover { text-decoration: none; }
 
 /* Series list */
 .series-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
@@ -693,7 +693,7 @@ body { font-family: -apple-system, 'Segoe UI', Arial, sans-serif; background: #f
 .score-big { font-size: 22px; font-weight: 700; color: #2ecc71; float: right; margin-top: -4px; }
 .score-zero { color: #ccc; }
 
-/* Series detail & Nearby */
+/* Series detail */
 .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
 .photo-card { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); position: relative; }
 .photo-card img.photo-thumb { width: 100%; height: 220px; object-fit: cover; cursor: pointer; }
@@ -745,7 +745,6 @@ body.debug-enabled .lightbox-debug-panel { display: block; }
 .lightbox-debug-row .debug-points { color: #f8d57f; font-weight: 700; font-variant-numeric: tabular-nums; }
 .lightbox-debug-empty { color: #8b97aa; font-size: 13px; }
 .rescued-badge { display: inline-block; background: #2ecc71; color: #fff; padding: 2px 10px; border-radius: 12px; font-size: 12px; margin-left: 8px; }
-.nearby-btn, .nearby-btn:visited { color: #fff !important; }
 
 @media (max-width: 1024px) {
   .lightbox-shell { grid-template-columns: 1fr; height: auto; max-height: 92vh; }
@@ -753,25 +752,6 @@ body.debug-enabled .lightbox-debug-panel { display: block; }
   .lightbox-side { border-left: none; border-top: 1px solid rgba(255,255,255,0.08); }
 }
 
-/* Nearby browser */
-.nearby-btn { display: inline-block; background: #4a6fa5; color: #fff; border: none; padding: 8px 20px;
-              border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; text-decoration: none; margin-left: 8px;
-              letter-spacing: 0.3px; }
-.nearby-btn:hover { background: #3d5d8c; }
-.series-divider { background: #f8f9fa; padding: 12px 20px; margin: 24px 0 16px; border-left: 4px solid #4a6fa5;
-                  font-size: 16px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; }
-.series-divider.current { border-left-color: #e74c3c; background: #fef2f2; }
-.batch-bar { position: sticky; bottom: 0; background: #1a1a2e; color: #fff; padding: 12px 24px;
-             display: flex; align-items: center; justify-content: space-between; border-radius: 12px 12px 0 0;
-             box-shadow: 0 -4px 16px rgba(0,0,0,0.2); z-index: 100; margin-top: 24px; }
-.batch-bar .count { font-size: 16px; font-weight: 600; }
-.batch-bar button { background: #2ecc71; color: #fff; border: none; padding: 10px 28px; border-radius: 8px;
-                    font-size: 15px; font-weight: 700; cursor: pointer; }
-.batch-bar button:hover { background: #27ae60; }
-.batch-bar button:disabled { background: #555; cursor: default; }
-.photo-checkbox { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; cursor: pointer;
-                  accent-color: #2ecc71; z-index: 10; }
-.photo-card.checked { outline: 3px solid #2ecc71; outline-offset: -3px; }
 
 /* Settings page */
 .settings-layout { display: flex; gap: 24px; max-width: 1100px; margin: 0 auto; }
@@ -1038,37 +1018,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-function updateBatchCount() {
-    var checked = document.querySelectorAll('.photo-checkbox:checked');
-    var countEl = document.getElementById('batch-count');
-    var btn = document.getElementById('batch-send');
-    if (countEl) {
-        countEl.textContent = String(checked.length);
-        btn.disabled = checked.length === 0;
-    }
-}
-function toggleCard(cb) {
-    var card = cb.closest('.photo-card');
-    if (cb.checked) card.classList.add('checked');
-    else card.classList.remove('checked');
-    updateBatchCount();
-}
-function selectAll() {
-    var cbs = document.querySelectorAll('.photo-checkbox');
-    for (var i = 0; i < cbs.length; i++) {
-        cbs[i].checked = true;
-        cbs[i].closest('.photo-card').classList.add('checked');
-    }
-    updateBatchCount();
-}
-function selectNone() {
-    var cbs = document.querySelectorAll('.photo-checkbox');
-    for (var i = 0; i < cbs.length; i++) {
-        cbs[i].checked = false;
-        cbs[i].closest('.photo-card').classList.remove('checked');
-    }
-    updateBatchCount();
-}
 function confirmRescue(formId, fileName) {
     if (confirm('Скопировать фото ' + fileName + ' в папку selected?')) {
         document.getElementById(formId).submit();
@@ -1242,31 +1191,6 @@ function confirmAmbiguous(seriesName) {
         else { alert('Ошибка: ' + (data.error || 'неизвестная')); }
     })
     .catch(function(e) { alert('Ошибка: ' + e.message); });
-}
-
-function submitBatch() {
-    var checked = document.querySelectorAll('.photo-checkbox:checked');
-    if (checked.length === 0) return;
-    if (!confirm('Отправить на печать ' + checked.length + ' фото? Они будут скопированы в selected и синхронизированы в сетевую папку.')) return;
-    var form = document.getElementById('batch-form');
-    var container = document.getElementById('batch-inputs');
-    // Clear previous hidden inputs
-    while (container.firstChild) container.removeChild(container.firstChild);
-    // Add count
-    var countInp = document.createElement('input');
-    countInp.type = 'hidden'; countInp.name = 'count'; countInp.value = String(checked.length);
-    container.appendChild(countInp);
-    // Add each photo
-    for (var i = 0; i < checked.length; i++) {
-        var cb = checked[i];
-        var inp1 = document.createElement('input');
-        inp1.type = 'hidden'; inp1.name = 'path_' + i; inp1.value = cb.getAttribute('data-path');
-        container.appendChild(inp1);
-        var inp2 = document.createElement('input');
-        inp2.type = 'hidden'; inp2.name = 'series_' + i; inp2.value = cb.getAttribute('data-series');
-        container.appendChild(inp2);
-    }
-    form.submit();
 }
 
 // Cleanup modal
@@ -1631,9 +1555,8 @@ def _render_series_card(series: dict, config: dict, history_mode: bool = False) 
     action_html = ""
     if not history_mode:
         action_html = (
-            f'<a href="/nearby/{name}" class="nearby-btn" style="font-size:12px; padding:5px 12px">Рядом</a>'
-            + (f'<button onclick="confirmAmbiguous(\'{name}\')" class="nearby-btn" '
-               f'style="font-size:12px; padding:5px 12px; background:#27ae60; color:#fff; border:none; cursor:pointer">'
+            (f'<button onclick="confirmAmbiguous(\'{name}\')" '
+               f'style="font-size:12px; padding:5px 12px; background:#27ae60; color:#fff; border:none; cursor:pointer; border-radius:8px; font-weight:700">'
                f'Подтвердить</button>'
                if status == "ambiguous_manual_review" else "")
         )
@@ -1773,7 +1696,6 @@ def _render_series_detail(series: dict, selected_dir: Path, config: dict) -> str
     breadcrumb = (
         '<div class="breadcrumb">'
         '<a href="/">&larr; Все серии</a> / ' + name
-        + (f' <a href="/nearby/{name}" class="nearby-btn">Посмотреть рядом</a>' if live_series else "")
         + '</div>'
     )
 
@@ -1853,165 +1775,6 @@ def _render_series_detail(series: dict, selected_dir: Path, config: dict) -> str
         )
     body += '<div class="photo-grid">' + "".join(cards) + '</div>'
     return _page(f"Kanatka — {name}", body)
-
-
-def _render_nearby(
-    center_series: dict,
-    all_series: list[dict],
-    selected_dir: Path,
-    config: dict,
-    radius: int = 3,
-) -> str:
-    """Render the temporal browser showing photos from neighboring series.
-
-    Shows ``radius`` series before and after the center series, with
-    checkboxes for batch selection and a sticky action bar at the bottom.
-    """
-    center_name = center_series.get("series", "?")
-    existing_selected = (
-        {p.name for p in selected_dir.iterdir() if p.suffix.lower() in {".jpg", ".jpeg", ".png"}}
-        if selected_dir.exists() else set()
-    )
-
-    # Find index of center series
-    center_idx = None
-    for i, s in enumerate(all_series):
-        if s.get("series") == center_name:
-            center_idx = i
-            break
-    if center_idx is None:
-        return _page("Ошибка", f"<h2>Серия {center_name} не найдена</h2>")
-
-    # Get neighboring series
-    start = max(0, center_idx - radius)
-    end = min(len(all_series), center_idx + radius + 1)
-    nearby = all_series[start:end]
-
-    total_photos = sum(len(s.get("photos", [])) for s in nearby)
-    stats = f"{len(nearby)} серий ({total_photos} фото) вокруг {center_name}"
-
-    breadcrumb = (
-        '<div class="breadcrumb">'
-        '<a href="/">&larr; Все серии</a> / '
-        f'<a href="/series/{center_name}">{center_name}</a> / '
-        'Соседние серии</div>'
-    )
-
-    body_parts = [breadcrumb]
-    body_parts.append(
-        f'<h2 style="margin-bottom:8px">Серии рядом с {center_name}</h2>'
-        '<p style="color:#666; margin-bottom:16px; font-size:14px">'
-        'Выберите нужные фото галочками и нажмите &laquo;Отправить на печать&raquo; внизу. '
-        'Выбранные фото будут скопированы в папку selected и синхронизированы в сетевую папку.</p>'
-        '<div style="margin-bottom:16px">'
-        '<button onclick="selectAll()" class="rescue-btn" style="font-size:12px; padding:4px 12px">Выбрать все</button> '
-        '<button onclick="selectNone()" class="rescue-btn" style="font-size:12px; padding:4px 12px; background:#95a5a6">Снять все</button>'
-        '</div>'
-    )
-
-    for series in nearby:
-        name = series.get("series", "?")
-        status = series.get("status", "unknown")
-        photos = series.get("photos", [])
-        is_center = name == center_name
-
-        if status == "selected":
-            badge_html = '<span class="badge badge-selected">Выбрано</span>'
-        elif status == "discarded_empty":
-            badge_html = '<span class="badge badge-empty">Пустое</span>'
-        else:
-            badge_html = '<span class="badge badge-rejected">Отклонено</span>'
-
-        divider_cls = "series-divider current" if is_center else "series-divider"
-        center_marker = " (текущая)" if is_center else ""
-        body_parts.append(
-            f'<div class="{divider_cls}">'
-            f'<span>{name}{center_marker} &mdash; {len(photos)} фото</span>'
-            f'<span>{badge_html}</span>'
-            '</div>'
-        )
-
-        cards = []
-        group_name = f"nearby-{name}"
-        for index, photo in enumerate(photos):
-            fname = photo.get("file_name", "?")
-            fpath = photo.get("file_path", "")
-            score = photo.get("score", 0)
-            present = photo.get("subject_present", False)
-            fallback = photo.get("person_fallback", False)
-            actual_path = _find_existing_photo_for_series(photo, name, config, selected_file=series.get("selected_file", ""))
-            rescue_source = _find_rescue_source(photo, config)
-
-            score_val = score if isinstance(score, (int, float)) else 0
-            detect_info = _detect_label(present, fallback)
-            inline_debug_html = _build_inline_debug_html(photo)
-
-            rescue_name = f"{name}_{fname}"
-            already = rescue_name in existing_selected
-            already_html = ' <span class="rescued-badge">Уже</span>' if already else ""
-
-            if actual_path is not None:
-                thumb_src = f'/photo?path={quote(str(actual_path), safe="")}&amp;max_side=400'
-                full_src = f'/photo?path={quote(str(actual_path), safe="")}&amp;max_side=2200'
-                payload = _build_lightbox_payload_attr(
-                    full_src,
-                    fname,
-                    f"{name} · {detect_info}",
-                    _build_lightbox_debug_html(photo),
-                    score=float(score_val),
-                )
-                thumb_html = (
-                    f'<img class="photo-thumb js-lightbox-trigger" src="{thumb_src}" alt="{fname}" loading="lazy"'
-                    f' data-lightbox-group="{group_name}" data-lightbox-index="{index}"'
-                    f' data-lightbox-payload="{payload}"'
-                    f' onclick="openLightboxFromElement(this, event)"'
-                    " onerror=\"this.style.display='none'\">"
-                )
-            else:
-                thumb_html = (
-                    '<div class="photo-thumb" style="display:flex; align-items:center; justify-content:center; '
-                    'background:#eef1f5; color:#6b7280; font-weight:600; min-height:220px">Файл очищен</div>'
-                )
-
-            checkbox_html = ""
-            if rescue_source is not None and not already:
-                checkbox_html = (
-                    f'<input type="checkbox" class="photo-checkbox"'
-                    f' data-path="{rescue_source}" data-series="{name}"'
-                    ' onchange="toggleCard(this)">'
-                )
-
-            cards.append(
-                '<div class="photo-card">'
-                + f'{checkbox_html}'
-                + f'{thumb_html}'
-                + '<div class="photo-info">'
-                + f'<div class="photo-name">{fname}</div>'
-                + f'<div class="photo-score">Score: {_score_span(score_val)} &middot; {detect_info}{already_html}</div>'
-                + f'{inline_debug_html}'
-                + ('<div style="margin-top:8px; color:#7b8794; font-size:12px">Исходник очищен, отправка недоступна.</div>'
-                   if rescue_source is None and not already else '')
-                + '</div></div>'
-            )
-
-        body_parts.append('<div class="photo-grid">' + "".join(cards) + '</div>')
-
-    # Batch action bar
-    body_parts.append(
-        f'<form id="batch-form" method="POST" action="/rescue-batch">'
-        f'<input type="hidden" name="redirect" value="/nearby/{center_name}">'
-        '<div id="batch-inputs"></div>'
-        '</form>'
-        '<div class="batch-bar">'
-        '<div class="count">Выбрано: <span id="batch-count">0</span> фото</div>'
-        '<button id="batch-send" onclick="submitBatch()" disabled>'
-        'Отправить на печать'
-        '</button>'
-        '</div>'
-    )
-
-    body = "\n".join(body_parts)
-    return _page(f"Kanatka — рядом с {center_name}", body, stats)
 
 
 # ---------------------------------------------------------------------------
@@ -2952,17 +2715,6 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
             else:
                 self._send_html("<h1>Серия не найдена</h1>", 404)
 
-        elif path.startswith("/nearby/"):
-            series_name = path.split("/nearby/", 1)[1]
-            series = self._get_series()
-            found = next((s for s in series if s.get("series") == series_name), None)
-            if found:
-                selected_dir = Path(self.config["paths"]["output_selected"])
-                html = _render_nearby(found, series, selected_dir, self.config)
-                self._send_html(html)
-            else:
-                self._send_html("<h1>Серия не найдена</h1>", 404)
-
         elif path == "/api/health":
             try:
                 from watcher import check_disk_space
@@ -3161,28 +2913,6 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
                     SeriesBrowserHandler._series_cache = None
 
             self._send_redirect(f"/series/{series_name}")
-
-        elif parsed.path == "/rescue-batch":
-            # Batch rescue from nearby browser
-            count = int(params.get("count", ["0"])[0])
-            redirect_to = params.get("redirect", ["/"])[0]
-
-            photos_to_rescue = []
-            for i in range(count):
-                fpath = params.get(f"path_{i}", [""])[0]
-                series_name = params.get(f"series_{i}", [""])[0]
-                if fpath and series_name:
-                    photos_to_rescue.append({
-                        "path": fpath,
-                        "series": series_name,
-                    })
-
-            if photos_to_rescue:
-                selected_dir = Path(self.config["paths"]["output_selected"])
-                rescue_batch(photos_to_rescue, selected_dir, self.config)
-                SeriesBrowserHandler._series_cache = None
-
-            self._send_redirect(redirect_to)
 
         else:
             self.send_error(404)
