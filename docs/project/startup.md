@@ -116,6 +116,12 @@
 5. `src/config.json`
 6. `workdir/logs/ser001_report.json`
 
+## Build & Verify
+
+Перед любой сборкой EXE/инсталлятора — обязательно пройти чеклист: `docs/build_and_verify.md`.
+
+Юнит-тесты не ловят проблемы PyInstaller-бандла. E2E тест из `dist/` — обязателен.
+
 ## Known Pitfalls
 
 - Порт 8787: старые процессы нужно убивать перед перезапуском.
