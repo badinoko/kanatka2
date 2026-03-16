@@ -709,6 +709,9 @@ body.debug-enabled .debug-breakdown { display: flex; }
               border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none; }
 .rescue-btn:hover { background: #2980b9; }
 .rescue-btn.done { background: #2ecc71; cursor: default; }
+.replace-btn { background: #27ae60; }
+.replace-btn:hover { background: #219150; }
+.photo-card--selected { border: 4px solid #27ae60; box-shadow: 0 0 0 2px rgba(39,174,96,0.25); }
 .fullscreen-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
                       background: rgba(0,0,0,0.92); z-index: 1000; justify-content: center; align-items: center; padding: 24px; }
 .fullscreen-overlay.active { display: flex; }
@@ -1717,7 +1720,7 @@ def _render_series_detail(series: dict, selected_dir: Path, config: dict) -> str
         rescue_name = f"{name}_{fname}"
         already_rescued = rescue_name in existing_selected or selected_file == rescue_name
         if already_rescued:
-            rescue_html = '<span class="rescued-badge">Уже выбрано</span>'
+            rescue_html = ''  # card visual highlight handled via .photo-card--selected CSS
         elif rescue_source is None:
             rescue_html = '<span class="rescued-badge" style="background:#bdc3c7">Исходник очищен</span>'
         else:
@@ -1727,7 +1730,7 @@ def _render_series_detail(series: dict, selected_dir: Path, config: dict) -> str
                 f'<input type="hidden" name="path" value="{rescue_source}">'
                 f'<input type="hidden" name="series" value="{name}">'
                 f'<input type="hidden" name="file_name" value="{fname}">'
-                f'<button type="button" class="rescue-btn" onclick="confirmRescue(\'{form_id}\', \'{fname}\')">Спасти фото</button>'
+                f'<button type="button" class="rescue-btn replace-btn" onclick="confirmRescue(\'{form_id}\', \'{fname}\')">Заменить</button>'
                 '</form>'
             )
 
@@ -1754,8 +1757,9 @@ def _render_series_detail(series: dict, selected_dir: Path, config: dict) -> str
                 'background:#eef1f5; color:#6b7280; font-weight:600; min-height:220px">Файл очищен</div>'
             )
 
+        card_class = "photo-card photo-card--selected" if already_rescued else "photo-card"
         cards.append(
-            '<div class="photo-card">'
+            f'<div class="{card_class}" data-fname="{fname}">'
             f'{thumb_html}'
             '<div class="photo-info">'
             f'<div class="photo-name">{fname}</div>'
@@ -1774,6 +1778,15 @@ def _render_series_detail(series: dict, selected_dir: Path, config: dict) -> str
             '</div>'
         )
     body += '<div class="photo-grid">' + "".join(cards) + '</div>'
+    body += (
+        '<script>'
+        '(function(){'
+        'var grid=document.querySelector(".photo-grid");'
+        'var sel=grid&&grid.querySelector(".photo-card--selected");'
+        'if(sel&&grid.firstChild!==sel){grid.insertBefore(sel,grid.firstChild);}'
+        '})();'
+        '</script>'
+    )
     return _page(f"Kanatka — {name}", body)
 
 
