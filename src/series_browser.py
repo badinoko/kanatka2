@@ -2178,10 +2178,13 @@ function printSheet(name) {
 def _render_settings(config: dict) -> str:
     """Render the engineer settings page with all tunable parameters."""
     groups = []
-    sidebar_links = []
+    sidebar_links = [
+        '<a href="#" class="all-sections-link" onclick="showSection(null); return false;"'
+        ' style="font-weight:700">Все разделы</a>\n'
+    ]
     for idx, (group_title, group_desc, settings) in enumerate(_SETTINGS_SCHEMA):
         section_id = f"section-{idx}"
-        sidebar_links.append(f'<a href="#{section_id}" onclick="highlightSidebarLink(this)">{group_title}</a>')
+        sidebar_links.append(f'<a href="#" data-idx="{idx}" onclick="showSection({idx}); return false;">{group_title}</a>')
         rows = []
         for section, key, label, hint, input_type, extra in settings:
             current = config.get(section, {}).get(key, "")
@@ -2356,7 +2359,7 @@ document.addEventListener('DOMContentLoaded', function(){
 });
 """
 
-    sidebar_links.append('<a href="#change-password" onclick="highlightSidebarLink(this)">Пароль</a>')
+    sidebar_links.append('<a href="#change-password">Пароль</a>')
     sidebar_html = (
         '<aside class="settings-sidebar"><nav>'
         + "".join(sidebar_links)
@@ -2364,27 +2367,16 @@ document.addEventListener('DOMContentLoaded', function(){
     )
 
     sidebar_js = r"""
-function highlightSidebarLink(el) {
-    var links = document.querySelectorAll('.settings-sidebar a');
-    for (var i = 0; i < links.length; i++) links[i].classList.remove('active');
-    el.classList.add('active');
+function showSection(idx) {
+    document.querySelectorAll('.settings-group').forEach(function(g, i) {
+        g.style.display = (idx === null || i === idx) ? '' : 'none';
+    });
+    document.querySelectorAll('.settings-sidebar a[data-idx]').forEach(function(a) {
+        a.classList.toggle('active', idx !== null && parseInt(a.dataset.idx) === idx);
+    });
+    var allLink = document.querySelector('.all-sections-link');
+    if (allLink) allLink.style.fontWeight = idx === null ? '700' : '400';
 }
-(function() {
-    var groups = document.querySelectorAll('.settings-group, .change-pw-section');
-    var links = document.querySelectorAll('.settings-sidebar a');
-    if (!groups.length || !links.length) return;
-    var observer = new IntersectionObserver(function(entries) {
-        entries.forEach(function(entry) {
-            if (entry.isIntersecting) {
-                var id = entry.target.id;
-                for (var i = 0; i < links.length; i++) {
-                    links[i].classList.toggle('active', links[i].getAttribute('href') === '#' + id);
-                }
-            }
-        });
-    }, { rootMargin: '-80px 0px -60% 0px', threshold: 0 });
-    for (var i = 0; i < groups.length; i++) observer.observe(groups[i]);
-})();
 """
 
     body = (
