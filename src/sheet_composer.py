@@ -8,6 +8,7 @@ from pathlib import Path
 from PIL import Image, ImageOps
 
 from badge_utils import add_score_badge
+from image_utils import list_jpeg_files
 from metadata_utils import build_photo_metadata_path, photo_metadata_enabled
 
 
@@ -131,6 +132,24 @@ def compose_pending_sheets(config: dict, logger, allow_partial: bool | None = No
         )
 
     return generated_sheets
+
+
+def compose_if_ready(config: dict, logger=None) -> bool:
+    """Compose a sheet immediately if selected/ has >= sheet capacity photos.
+
+    Called after priority rescue (operator 'Заменить' action).
+    Returns True if a sheet was composed and printed, False if not enough photos yet.
+    """
+    selected_dir = Path(config["paths"]["output_selected"])
+    photos = list_jpeg_files(selected_dir) if selected_dir.exists() else []
+
+    sheet_cfg = config.get("sheet", {})
+    capacity = sheet_cfg.get("grid_columns", 2) * sheet_cfg.get("grid_rows", 4)
+
+    if len(photos) >= capacity:
+        compose_pending_sheets(config, logger=logger)
+        return True
+    return False
 
 
 def load_score_overlay_data(image_path: Path) -> dict[str, object]:

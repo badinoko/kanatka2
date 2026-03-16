@@ -2966,6 +2966,11 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
                     dest = rescue_photo(source, selected_dir, series_name)
                     _sync_rescued_to_network([dest], self.config)
                     SeriesBrowserHandler._series_cache = None
+                    try:
+                        from sheet_composer import compose_if_ready
+                        compose_if_ready(self.config)
+                    except Exception:
+                        pass  # non-blocking: monitoring must not be interrupted
 
             self._send_redirect(f"/series/{series_name}")
 
