@@ -140,11 +140,15 @@ def compose_if_ready(config: dict, logger=None) -> bool:
     Called after priority rescue (operator 'Заменить' action).
     Returns True if a sheet was composed and printed, False if not enough photos yet.
     """
+    if logger is None:
+        import logging
+        logger = logging.getLogger(__name__)
+
     selected_dir = Path(config["paths"]["output_selected"])
     photos = list_jpeg_files(selected_dir) if selected_dir.exists() else []
 
     sheet_cfg = config.get("sheet", {})
-    capacity = sheet_cfg.get("grid_columns", 2) * sheet_cfg.get("grid_rows", 4)
+    capacity = sheet_cfg.get("photos_per_sheet", sheet_cfg.get("grid_columns", 2) * sheet_cfg.get("grid_rows", 4))
 
     if len(photos) >= capacity:
         compose_pending_sheets(config, logger=logger)

@@ -10,7 +10,7 @@ class TestComposeIfReady(unittest.TestCase):
     def _make_config(self, selected_dir="/nonexistent/dir", cols=2, rows=4):
         return {
             "paths": {"output_selected": selected_dir},
-            "sheet": {"grid_columns": cols, "grid_rows": rows},
+            "sheet": {"grid_columns": cols, "grid_rows": rows, "photos_per_sheet": cols * rows},
         }
 
     def test_returns_false_when_dir_does_not_exist(self):
@@ -43,7 +43,7 @@ class TestComposeIfReady(unittest.TestCase):
                 with unittest.mock.patch("sheet_composer.compose_pending_sheets") as mock_compose:
                     result = compose_if_ready(config)
         self.assertTrue(result)
-        mock_compose.assert_called_once_with(config, logger=None)
+        mock_compose.assert_called_once_with(config, logger=unittest.mock.ANY)
 
 
 if __name__ == "__main__":
