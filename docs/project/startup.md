@@ -1,6 +1,6 @@
 # Startup
 
-Обновлено: 2026-03-16 (v3.0 UX Wave — DONE)
+Обновлено: 2026-03-16 (v3.0 UX Wave DONE + PR #1 merged, 4 бага зафиксированы)
 
 ## Read Order
 
@@ -59,10 +59,33 @@
 
 ## Immediate Priorities
 
+- **KAN-091..094 (BUG) — ПЕРВЫЙ ПРИОРИТЕТ**. 4 бага, выявленных ботом при review PR #1. Описание в `overview.md`.
 - **v3.0 UX Wave (KAN-080..090) — DONE** (реализованы 2026-03-16, 61 тест пройден).
-- **KAN-079** (navbar v3): PR #1 на ветке `kan-079-navbar-v3-redesign`. Нужен merge в main.
+- **KAN-079** (navbar v3): PR #1 слит в main пользователем. После слияния — `git pull origin main` + `git branch -d kan-079-navbar-v3-redesign`.
 - **KAN-050**: прогнать реальный датасет заказчика, собрать замечания, откалибровать дефолты score и series grouping.
 - KAN-033 (BACKLOG): deployment guide для инженера — позже.
+
+## KAN-091..094 — Детальное описание багов для первой сессии
+
+### KAN-091 — Monitor button stale state на /settings
+- **Файл:** `src/series_browser.py`
+- **Проблема:** JS-поллинг статуса мониторинга (`/api/monitor` status) запускается только когда `KANATKA_PAGE_KEY` == `series-list` или `sheets`. На странице `/settings` поллинг не включается → кнопка мониторинга показывает устаревшее состояние.
+- **Фикс:** В условии `DOMContentLoaded` добавить `settings` в список страниц, где запускается поллинг. Либо вынести поллинг в общий блок без условия по странице.
+
+### KAN-092 — Принтер не сохраняется из настроек
+- **Файл:** `src/series_browser.py`
+- **Проблема:** `<select name="print.printer_name">` — но `saveSettings()` ожидает `section__key` (двойное подчёркивание как разделитель). Точечный сепаратор → `_handle_save_settings()` не находит ключ → изменение молча игнорируется.
+- **Фикс:** Изменить `name="print.printer_name"` на `name="print__printer_name"` в рендере printer select.
+
+### KAN-093 — Неправильная сортировка серий при >9 штук
+- **Файл:** `src/series_browser.py`, функция `load_all_series()`
+- **Проблема:** `sorted(log_dir.glob("s_*_report.json"), reverse=True)` — лексикографическая сортировка. При 10+ сериях `s_9` окажется «позже» `s_10`, `s_11` и т.д.
+- **Фикс:** Сортировать по числовому индексу — извлекать число из имени файла через `re.search(r's_(\d+)_report', f.name)` и сортировать по `int(match.group(1))`.
+
+### KAN-094 — Sheet metadata пишет серию как "S" вместо "S_1"
+- **Файл:** `src/sheet_composer.py`, строки 63-64
+- **Проблема:** `series = name.split("_")[0]` → для файла `S_1_img.jpg` возвращает `"S"` вместо `"S_1"`. Ломает sidecar metadata для всех листов после KAN-084.
+- **Фикс:** Использовать regex `re.match(r'(S_\d+)', name)` или `"_".join(name.split("_")[:2])`.
 
 ## Execution Brief For New Chat
 
@@ -70,28 +93,23 @@
 
 1. Прочитать:
    - `CLAUDE.md`
-   - `CODEX.md`
    - `docs/project/overview.md`
-   - `docs/project/roadmap.md`
-   - `docs/project/startup.md`
+   - `docs/project/startup.md` (этот файл)
    - tail `docs/project/progress.md`
-   - `archive/project/2026-03-15/kan-038-score-design-brief.md`
 2. Принять как исходные условия:
    - основной workflow живёт на нижнем ПК;
    - оператору не нужен live-photo stream;
    - серии формируются по времени создания файла, целевое окно внутри серии = до 2 секунд;
+   - серии именуются `S_<N>` (без нулей, начиная с KAN-084);
    - спорные серии должны полностью выходить из текущего workflow и не тормозить остальные листы;
-   - cleanup подтверждён как scheduled subprocess worker;
    - `installers/` больше не игнорируется;
-   - актуальный артефакт для заказчика: `installers/PhotoSelector_Setup_v2.exe` (собран 2026-03-16);
-   - следующий milestone — feedback от заказчика по его тест-пачке и калибровка score.
-3. v3.0 UX Wave — **ВСЕ ЗАДАЧИ ВЫПОЛНЕНЫ** (KAN-080..090 DONE).
-   Следующий шаг: merge PR #1 (`kan-079-navbar-v3-redesign`) → main.
-4. Кодовый фокус:
-   - `src/series_browser.py` (основной объём UX Wave)
-   - `src/selector.py` (KAN-084)
-   - `src/sheet_composer.py` (KAN-089)
-5. Не тратить время на:
+   - следующий milestone — фикс 4 багов (KAN-091..094), затем feedback от заказчика и калибровка score.
+3. Первое что делать: фикс KAN-091..094 (см. секцию выше).
+4. Кодовый фокус для KAN-091..094:
+   - `src/series_browser.py` (KAN-091, 092, 093)
+   - `src/sheet_composer.py` (KAN-094)
+5. После каждого фикса: запускать тесты `.venv/Scripts/python.exe -m unittest discover -s tests -p "test_*.py"`.
+6. Не тратить время на:
    - `receiver/` (legacy, не часть продукта);
    - тяжёлый live-UI;
    - постоянный cleanup daemon.

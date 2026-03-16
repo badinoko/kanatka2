@@ -4,6 +4,35 @@
 
 ---
 
+## 2026-03-16 — v3.0 UX Wave (KAN-079..090)
+
+Реализована волна UX-улучшений по запросу пользователя.
+
+**Выполнено:**
+- **KAN-081**: Удалён функционал «Рядом» (`/nearby/`, `_render_nearby()`, `/rescue-batch`, CSS-блок, JS batch-selection functions).
+- **KAN-088**: Удалена секция «Сеть» из `_SETTINGS_SCHEMA` в settings page. `sync_sheets_to_network()` оставлена в коде.
+- **KAN-084**: Серии переименованы `SER065 → S_65` (без нулей). `selector.py` + `series_browser.py`. Старые SER* не мигрируются.
+- **KAN-082**: Кнопка «Заменить» (зелёная), убран бейдж «Уже выбрано», зелёная рамка `.photo-card--selected`, JS перемещает на 1-е место без перезагрузки.
+- **KAN-083**: Хлебные крошки 17px / #2563c7. Breadcrumb добавлен на страницу Листов.
+- **KAN-085**: Индикатор диска → горизонтальный прогресс-бар 64×8px (зел/жёл/красн). `total_gb` добавлен в `check_disk_space()`.
+- **KAN-086**: `confirm()` удалён из `printSheet()`. Только toast.
+- **KAN-087**: Поле принтера → `<select>` из `win32print.EnumPrinters()`. `/api/list-printers`. `pywin32` в requirements.
+- **KAN-080**: Сайдбар настроек: `showSection()` — клик показывает только один раздел; «Все разделы» вверху.
+- **KAN-089**: `compose_if_ready()` в `sheet_composer.py` — после «Заменить» немедленно собирает лист если фото >= grid_columns × grid_rows.
+- **KAN-079**: Редизайн навбара v3. PR #1 создан на ветке `kan-079-navbar-v3-redesign`.
+
+**Тесты:** 61 тест, все проходят.
+
+**Выявленные баги (ревью PR #1 ботом — не исправлены, зафиксированы в KAN-091..094):**
+- KAN-091: Monitor button stale state на /settings (polling не включён).
+- KAN-092: Принтер не сохраняется (`name="print.printer_name"` → нужен `name="print__printer_name"`).
+- KAN-093: Сортировка серий ломается при >9 (лексикографическая).
+- KAN-094: Sheet metadata пишет серию как `"S"` вместо `"S_1"`.
+
+**Следующий шаг:** merge PR #1 → main, затем фикс KAN-091..094 в новой сессии.
+
+---
+
 ## Хронология проекта (summary)
 
 ### 2026-03-14 — Старт kanatka2
