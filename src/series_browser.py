@@ -1,12 +1,12 @@
 """Web-based series browser for reviewing and rescuing photos.
 
 Runs a local HTTP server (stdlib only, no dependencies) that shows
-all processed series with thumbnails, scores, and a temporal browser
-for finding nearby photos when the print shop detects an error.
+all processed series with thumbnails, scores, and rescue controls.
 """
 from __future__ import annotations
 
 import hashlib
+import html as _html
 import io
 import json
 import secrets
@@ -196,8 +196,8 @@ def _start_monitoring(config: dict) -> None:
         import re as _re
         _log_dir = Path(config["paths"]["log_dir"])
         _max_idx = 0
-        for _rp in _log_dir.glob("ser*_report.json"):
-            _m = _re.match(r"ser(\d+)_report", _rp.stem)
+        for _rp in _log_dir.glob("s_*_report.json"):
+            _m = _re.match(r"s_(\d+)_report", _rp.stem)
             if _m:
                 _max_idx = max(_max_idx, int(_m.group(1)))
         series_idx = _max_idx + 1
@@ -277,9 +277,9 @@ def _check_auth_cookie(cookie_header: str | None) -> bool:
 # ---------------------------------------------------------------------------
 
 def load_all_series(log_dir: Path) -> list[dict]:
-    """Read all ser*_report.json files and return sorted list of series."""
+    """Read all s_*_report.json files and return sorted list of series."""
     series: list[dict] = []
-    for report_path in sorted(log_dir.glob("ser*_report.json"), reverse=True):
+    for report_path in sorted(log_dir.glob("s_*_report.json"), reverse=True):
         try:
             data = json.loads(report_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
@@ -303,7 +303,10 @@ def rescue_batch(
     selected_dir: Path,
     config: dict,
 ) -> list[Path]:
-    """Copy multiple photos to selected/ and sync to network if enabled.
+    """Rescue multiple photos into the selected directory.
+
+    Utility function for batch rescue operations. Kept for testing and potential
+    future use; the /rescue-batch HTTP endpoint was removed in KAN-081.
 
     Each item in photos: {"path": str, "series": str}
     Returns list of destination paths.
@@ -363,7 +366,7 @@ def _count_ambiguous_series() -> int:
     except Exception:
         return 0
     count = 0
-    for report_path in log_dir.glob("ser*_report.json"):
+    for report_path in log_dir.glob("s_*_report.json"):
         try:
             data = json.loads(report_path.read_text(encoding="utf-8"))
             if data.get("status") == "ambiguous_manual_review":
@@ -598,33 +601,87 @@ def _build_lightbox_payload_attr(src: str, title: str, subtitle: str, debug_html
 
 _CSS = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, 'Segoe UI', Arial, sans-serif; background: #f0f2f5; color: #1a1a1a; padding-top: 56px; }
+html { overflow-y: scroll; }
+body { font-family: -apple-system, 'Segoe UI', Arial, sans-serif; background: #f0f2f5; color: #1a1a1a; padding-top: 64px; }
 
-/* Sticky Navigation */
+/* Sticky Navigation — v3 redesign */
 .navbar { position: fixed; top: 0; left: 0; right: 0; z-index: 900; background: #1a1a2e; color: #fff;
-          height: 56px; display: flex; align-items: center; padding: 0 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
-.navbar .brand { font-size: 18px; font-weight: 700; margin-right: 32px; color: #fff; text-decoration: none; }
-.navbar .nav-links { display: flex; gap: 4px; }
-.navbar .nav-links a { color: rgba(255,255,255,0.7); text-decoration: none; padding: 8px 16px; border-radius: 6px;
-                       font-size: 14px; font-weight: 500; transition: all 0.15s; }
-.navbar .nav-links a:hover { color: #fff; background: rgba(255,255,255,0.1); }
-.navbar .nav-links a.active { color: #fff; background: rgba(255,255,255,0.15); }
-.navbar .nav-links .nav-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14);
-                               color: rgba(255,255,255,0.82); padding: 8px 14px; border-radius: 6px; cursor: pointer;
-                               font-size: 13px; font-weight: 600; transition: all 0.15s; }
-.navbar .nav-links .nav-btn:hover { color: #fff; background: rgba(255,255,255,0.16); }
-.navbar .nav-links .nav-btn.active { background: #f1c40f; color: #1a1a2e; border-color: #f1c40f; }
-.navbar .nav-right { font-size: 13px; opacity: 0.85; display: flex; align-items: center; gap: 10px; margin-left: 12px; }
+          height: 64px; display: flex; align-items: center; padding: 0 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.25); gap: 12px; }
+.navbar .brand { font-size: 20px; font-weight: 700; color: #fff; text-decoration: none; white-space: nowrap; margin-right: 4px; }
+.navbar .brand span { font-size: 22px; }
+
+/* Page switcher pill */
+.page-switcher { display: flex; background: rgba(255,255,255,0.08); border-radius: 10px; padding: 3px; gap: 2px; flex-shrink: 0; }
+.page-switcher a { text-decoration: none; color: rgba(255,255,255,0.6); padding: 8px 18px; border-radius: 8px;
+                   font-size: 14px; font-weight: 600; transition: all 0.2s; white-space: nowrap; }
+.page-switcher a.active { background: rgba(255,255,255,0.18); color: #fff; }
+.page-switcher a:hover:not(.active) { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.85); }
+
+/* Nav divider */
+.nav-divider { width: 1px; height: 28px; background: rgba(255,255,255,0.15); margin: 0 4px; flex-shrink: 0; }
+
+/* Action buttons — icon-only with tooltips */
+.action-buttons { display: flex; gap: 4px; flex-shrink: 0; }
+.action-btn { width: 42px; height: 42px; display: flex; align-items: center; justify-content: center;
+              background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10); border-radius: 10px;
+              color: rgba(255,255,255,0.75); font-size: 22px; line-height: 1; cursor: pointer; transition: all 0.15s;
+              position: relative; flex-shrink: 0; }
+.action-btn:hover { background: rgba(255,255,255,0.14); color: #fff; transform: translateY(-1px); }
+.action-btn.active-toggle { background: rgba(255,193,7,0.2); border-color: rgba(255,193,7,0.4); color: #ffc107; }
+.action-btn.danger { color: rgba(239,83,80,0.85); }
+.action-btn.danger:hover { background: rgba(239,83,80,0.15); color: #ef5350; }
+.action-btn::after { content: attr(data-tooltip); position: absolute; bottom: -32px; left: 50%;
+                     transform: translateX(-50%); background: #333; color: #fff; padding: 4px 10px;
+                     border-radius: 6px; font-size: 12px; white-space: nowrap;
+                     opacity: 0; pointer-events: none; transition: opacity 0.15s; z-index: 999; }
+.action-btn:hover::after { opacity: 1; }
+
+/* Monitor button — hero element in navbar */
+.monitor-btn { display: flex; align-items: center; gap: 8px; padding: 8px 20px; border-radius: 10px;
+               font-size: 14px; font-weight: 700; cursor: pointer; transition: all 0.2s;
+               border: 2px solid; white-space: nowrap; flex-shrink: 0; background: none; }
+.monitor-btn.start { background: rgba(76,175,80,0.12); border-color: rgba(76,175,80,0.5); color: #66bb6a; }
+.monitor-btn.start:hover { background: rgba(76,175,80,0.25); border-color: #66bb6a; }
+.monitor-btn.stop { background: rgba(76,175,80,0.15); border-color: #4caf50; color: #81c784; }
+.monitor-btn.stop:hover { background: rgba(239,83,80,0.15); border-color: #ef5350; color: #ef5350; }
+.pulse-dot { width: 10px; height: 10px; background: #4caf50; border-radius: 50%; flex-shrink: 0;
+             animation: pulse 1.5s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(76,175,80,0.6); }
+                   50% { opacity: 0.8; box-shadow: 0 0 0 6px rgba(76,175,80,0); } }
+
+.nav-spacer { flex: 1; min-width: 8px; }
+.navbar .nav-right { font-size: 13px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+/* Settings gear */
+.settings-btn { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+                background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10);
+                border-radius: 10px; color: rgba(255,255,255,0.7); font-size: 22px; cursor: pointer;
+                transition: all 0.2s; flex-shrink: 0; text-decoration: none; }
+.settings-btn:hover { background: rgba(255,255,255,0.14); color: #fff; transform: rotate(30deg); }
+
+/* Disk indicator */
+.disk-indicator { display: flex; align-items: center; gap: 7px; color: rgba(255,255,255,0.65);
+                  font-size: 12px; white-space: nowrap; }
+.disk-bar-track { width: 64px; height: 8px; background: rgba(255,255,255,0.18);
+                  border-radius: 4px; overflow: hidden; flex-shrink: 0; }
+.disk-bar-fill { height: 100%; width: 0%; border-radius: 4px; background: #2ecc71;
+                 transition: width 0.5s, background 0.5s; }
+.disk-bar-fill.warn { background: #f39c12; }
+.disk-bar-fill.crit { background: #e74c3c; }
+.stats-badge { color: rgba(255,255,255,0.55); font-size: 12px; white-space: nowrap; }
+
+/* Responsive: hide stats text at narrow widths */
+@media (max-width: 1400px) { .stats-badge { display: none; } }
+@media (max-width: 1100px) { .disk-indicator .disk-text { display: none; }
+                             .monitor-btn { padding: 8px 14px; font-size: 13px; } }
 
 .header { background: #f0f2f5; color: #1a1a1a; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
 .header h1 { font-size: 20px; font-weight: 600; }
 .header .stats { font-size: 14px; color: #666; }
 .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-.breadcrumb { margin-bottom: 16px; font-size: 14px; }
-.breadcrumb a { color: #4a6fa5; text-decoration: none; }
-.breadcrumb a:hover { text-decoration: underline; }
-.breadcrumb .nearby-btn, .breadcrumb .nearby-btn:visited { color: #fff !important; }
-.breadcrumb .nearby-btn:hover { text-decoration: none; }
+.breadcrumb { margin-bottom: 20px; font-size: 17px; font-weight: 500; }
+.breadcrumb a { color: #2563c7; text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; color: #1a4fa8; }
 
 /* Series list */
 .series-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
@@ -642,7 +699,7 @@ body { font-family: -apple-system, 'Segoe UI', Arial, sans-serif; background: #f
 .score-big { font-size: 22px; font-weight: 700; color: #2ecc71; float: right; margin-top: -4px; }
 .score-zero { color: #ccc; }
 
-/* Series detail & Nearby */
+/* Series detail */
 .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
 .photo-card { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); position: relative; }
 .photo-card img.photo-thumb { width: 100%; height: 220px; object-fit: cover; cursor: pointer; }
@@ -658,6 +715,9 @@ body.debug-enabled .debug-breakdown { display: flex; }
               border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; text-decoration: none; }
 .rescue-btn:hover { background: #2980b9; }
 .rescue-btn.done { background: #2ecc71; cursor: default; }
+.replace-btn { background: #27ae60; }
+.replace-btn:hover { background: #219150; }
+.photo-card--selected { border: 4px solid #27ae60; box-shadow: 0 0 0 2px rgba(39,174,96,0.25); }
 .fullscreen-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
                       background: rgba(0,0,0,0.92); z-index: 1000; justify-content: center; align-items: center; padding: 24px; }
 .fullscreen-overlay.active { display: flex; }
@@ -694,7 +754,6 @@ body.debug-enabled .lightbox-debug-panel { display: block; }
 .lightbox-debug-row .debug-points { color: #f8d57f; font-weight: 700; font-variant-numeric: tabular-nums; }
 .lightbox-debug-empty { color: #8b97aa; font-size: 13px; }
 .rescued-badge { display: inline-block; background: #2ecc71; color: #fff; padding: 2px 10px; border-radius: 12px; font-size: 12px; margin-left: 8px; }
-.nearby-btn, .nearby-btn:visited { color: #fff !important; }
 
 @media (max-width: 1024px) {
   .lightbox-shell { grid-template-columns: 1fr; height: auto; max-height: 92vh; }
@@ -702,32 +761,22 @@ body.debug-enabled .lightbox-debug-panel { display: block; }
   .lightbox-side { border-left: none; border-top: 1px solid rgba(255,255,255,0.08); }
 }
 
-/* Nearby browser */
-.nearby-btn { display: inline-block; background: #4a6fa5; color: #fff; border: none; padding: 8px 20px;
-              border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; text-decoration: none; margin-left: 8px;
-              letter-spacing: 0.3px; }
-.nearby-btn:hover { background: #3d5d8c; }
-.series-divider { background: #f8f9fa; padding: 12px 20px; margin: 24px 0 16px; border-left: 4px solid #4a6fa5;
-                  font-size: 16px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; }
-.series-divider.current { border-left-color: #e74c3c; background: #fef2f2; }
-.batch-bar { position: sticky; bottom: 0; background: #1a1a2e; color: #fff; padding: 12px 24px;
-             display: flex; align-items: center; justify-content: space-between; border-radius: 12px 12px 0 0;
-             box-shadow: 0 -4px 16px rgba(0,0,0,0.2); z-index: 100; margin-top: 24px; }
-.batch-bar .count { font-size: 16px; font-weight: 600; }
-.batch-bar button { background: #2ecc71; color: #fff; border: none; padding: 10px 28px; border-radius: 8px;
-                    font-size: 15px; font-weight: 700; cursor: pointer; }
-.batch-bar button:hover { background: #27ae60; }
-.batch-bar button:disabled { background: #555; cursor: default; }
-.photo-checkbox { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; cursor: pointer;
-                  accent-color: #2ecc71; z-index: 10; }
-.photo-card.checked { outline: 3px solid #2ecc71; outline-offset: -3px; }
 
 /* Settings page */
+.settings-layout { display: flex; gap: 24px; max-width: 1100px; margin: 0 auto; }
+.settings-sidebar { position: sticky; top: 80px; flex: 0 0 180px; align-self: flex-start; }
+.settings-sidebar nav { background: #fff; border-radius: 12px; padding: 12px 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.settings-sidebar a { display: block; padding: 8px 12px; font-size: 13px; color: #555; text-decoration: none;
+                      border-radius: 8px; margin-bottom: 2px; transition: all 0.15s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.settings-sidebar a:hover { background: #f0f2f5; color: #1a1a2e; }
+.settings-sidebar a.active { background: #4a6fa5; color: #fff; font-weight: 600; }
+.settings-main { flex: 1; min-width: 0; }
 .settings-page { max-width: 900px; margin: 0 auto; }
 .settings-group { background: #fff; border-radius: 12px; padding: 20px 24px; margin-bottom: 20px;
-                  box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+                  box-shadow: 0 2px 8px rgba(0,0,0,0.06); scroll-margin-top: 80px; }
 .settings-group h3 { font-size: 16px; font-weight: 600; margin-bottom: 4px; color: #1a1a2e; }
 .settings-group .group-desc { font-size: 13px; color: #666; margin-bottom: 16px; }
+@media (max-width: 860px) { .settings-sidebar { display: none; } .settings-layout { max-width: 900px; } }
 .setting-row { display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid #f0f2f5; gap: 16px; }
 .setting-row:last-child { border-bottom: none; }
 .setting-label { flex: 0 0 280px; }
@@ -757,6 +806,21 @@ body.debug-enabled .lightbox-debug-panel { display: block; }
 .auth-close { position: absolute; top: 12px; right: 16px; font-size: 28px; color: #999;
               text-decoration: none; line-height: 1; }
 .auth-close:hover { color: #333; }
+
+/* Unified modal styles */
+.modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                 background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center; }
+.modal-content { background: #fff; border-radius: 16px; padding: 0; width: 90%;
+                 box-shadow: 0 12px 48px rgba(0,0,0,0.25), 0 4px 16px rgba(0,0,0,0.15);
+                 position: relative; animation: modalIn 0.2s ease-out; }
+@keyframes modalIn { from { opacity: 0; transform: translateY(12px) scale(0.97); } to { opacity: 1; transform: none; } }
+.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 28px 0; }
+.modal-header h3 { margin: 0; font-size: 17px; font-weight: 600; color: #1a1a2e; }
+.modal-close { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+               background: #f0f2f5; border: none; border-radius: 8px; font-size: 20px; color: #666;
+               cursor: pointer; transition: all 0.15s; line-height: 1; flex-shrink: 0; }
+.modal-close:hover { background: #e0e0e0; color: #333; }
+.modal-body { padding: 16px 28px 24px; }
 .auth-modal h2 { font-size: 20px; margin-bottom: 8px; }
 .auth-modal .auth-hint { font-size: 14px; color: #666; margin-bottom: 20px; }
 .auth-modal input[type=password] { width: 100%; padding: 12px 16px; border: 2px solid #ddd; border-radius: 8px;
@@ -791,7 +855,7 @@ body.debug-enabled .lightbox-debug-panel { display: block; }
 .pagination-info { text-align: center; font-size: 13px; color: #888; margin-bottom: 8px; }
 
 /* Card size switcher */
-.view-switcher { display: flex; gap: 4px; margin-left: auto; }
+.view-switcher { display: flex; gap: 3px; background: rgba(255,255,255,0.06); border-radius: 8px; padding: 3px; }
 /* Toast notification */
 #toast { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
          background: #22313f; color: #fff; padding: 14px 28px; border-radius: 12px;
@@ -801,10 +865,11 @@ body.debug-enabled .lightbox-debug-panel { display: block; }
 #toast.toast-ok { background: #27ae60; }
 #toast.toast-err { background: #e74c3c; }
 #toast.show { opacity: 1; }
-.view-switcher button { background: rgba(255,255,255,0.1); border: none; color: rgba(255,255,255,0.6);
-                        padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; }
-.view-switcher button:hover { background: rgba(255,255,255,0.2); color: #fff; }
-.view-switcher button.active { background: rgba(255,255,255,0.2); color: #fff; }
+.view-switcher button { width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
+                        background: transparent; border: none; color: rgba(255,255,255,0.5);
+                        border-radius: 6px; cursor: pointer; font-size: 16px; transition: all 0.15s; }
+.view-switcher button:hover { background: rgba(255,255,255,0.15); color: #fff; }
+.view-switcher button.active { background: rgba(255,255,255,0.15); color: #fff; }
 .series-grid.view-large { grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); }
 .series-grid.view-large .series-thumb { height: 280px; }
 .series-grid.view-medium { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
@@ -829,8 +894,9 @@ function applyDebugMode() {
     document.body.classList.toggle('debug-enabled', enabled);
     var btn = document.getElementById('debug-toggle');
     if (btn) {
-        btn.classList.toggle('active', enabled);
-        btn.textContent = enabled ? 'Debug score: ON' : 'Debug score: OFF';
+        btn.classList.toggle('active-toggle', enabled);
+        btn.textContent = '\uD83D\uDD2C';
+        btn.setAttribute('data-tooltip', enabled ? 'Debug score: ON' : 'Debug score: OFF');
     }
 }
 function toggleDebugMode() {
@@ -961,37 +1027,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-function updateBatchCount() {
-    var checked = document.querySelectorAll('.photo-checkbox:checked');
-    var countEl = document.getElementById('batch-count');
-    var btn = document.getElementById('batch-send');
-    if (countEl) {
-        countEl.textContent = String(checked.length);
-        btn.disabled = checked.length === 0;
-    }
-}
-function toggleCard(cb) {
-    var card = cb.closest('.photo-card');
-    if (cb.checked) card.classList.add('checked');
-    else card.classList.remove('checked');
-    updateBatchCount();
-}
-function selectAll() {
-    var cbs = document.querySelectorAll('.photo-checkbox');
-    for (var i = 0; i < cbs.length; i++) {
-        cbs[i].checked = true;
-        cbs[i].closest('.photo-card').classList.add('checked');
-    }
-    updateBatchCount();
-}
-function selectNone() {
-    var cbs = document.querySelectorAll('.photo-checkbox');
-    for (var i = 0; i < cbs.length; i++) {
-        cbs[i].checked = false;
-        cbs[i].closest('.photo-card').classList.remove('checked');
-    }
-    updateBatchCount();
-}
 function confirmRescue(formId, fileName) {
     if (confirm('Скопировать фото ' + fileName + ' в папку selected?')) {
         document.getElementById(formId).submit();
@@ -1079,18 +1114,25 @@ function openReadme() {
 function closeReadme() {
     document.getElementById('readme-modal').style.display = 'none';
 }
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') closeReadme();
-});
+// (Escape handling for modals is unified in the cleanup section)
 
-// Monitor control
+// Monitor control — v3 navbar button
 function _setMonitorBtnState(active) {
-    var area = document.getElementById('monitor-btn-area');
-    if (!area) return;
+    var btn = document.getElementById('monitor-btn-area');
+    if (!btn) return;
+    // Clear existing children safely
+    while (btn.firstChild) btn.removeChild(btn.firstChild);
     if (active) {
-        area.innerHTML = '<button onclick="toggleMonitor(\'stop\')" style="background:#e74c3c; color:#fff; border:none; padding:8px 20px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer">\u041e\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c</button>';
+        btn.className = 'monitor-btn stop';
+        btn.setAttribute('onclick', "toggleMonitor('stop')");
+        var dot = document.createElement('span');
+        dot.className = 'pulse-dot';
+        btn.appendChild(dot);
+        btn.appendChild(document.createTextNode('\u041e\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c'));
     } else {
-        area.innerHTML = '<button onclick="toggleMonitor(\'start\')" style="background:#2ecc71; color:#fff; border:none; padding:8px 20px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer">\u25b6 \u0417\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c</button>';
+        btn.className = 'monitor-btn start';
+        btn.setAttribute('onclick', "toggleMonitor('start')");
+        btn.appendChild(document.createTextNode('\u25b6 \u0417\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c'));
     }
 }
 
@@ -1160,31 +1202,6 @@ function confirmAmbiguous(seriesName) {
     .catch(function(e) { alert('Ошибка: ' + e.message); });
 }
 
-function submitBatch() {
-    var checked = document.querySelectorAll('.photo-checkbox:checked');
-    if (checked.length === 0) return;
-    if (!confirm('Отправить на печать ' + checked.length + ' фото? Они будут скопированы в selected и синхронизированы в сетевую папку.')) return;
-    var form = document.getElementById('batch-form');
-    var container = document.getElementById('batch-inputs');
-    // Clear previous hidden inputs
-    while (container.firstChild) container.removeChild(container.firstChild);
-    // Add count
-    var countInp = document.createElement('input');
-    countInp.type = 'hidden'; countInp.name = 'count'; countInp.value = String(checked.length);
-    container.appendChild(countInp);
-    // Add each photo
-    for (var i = 0; i < checked.length; i++) {
-        var cb = checked[i];
-        var inp1 = document.createElement('input');
-        inp1.type = 'hidden'; inp1.name = 'path_' + i; inp1.value = cb.getAttribute('data-path');
-        container.appendChild(inp1);
-        var inp2 = document.createElement('input');
-        inp2.type = 'hidden'; inp2.name = 'series_' + i; inp2.value = cb.getAttribute('data-series');
-        container.appendChild(inp2);
-    }
-    form.submit();
-}
-
 // Cleanup modal
 function openCleanup() {
     document.getElementById('cleanup-modal').style.display = 'flex';
@@ -1192,6 +1209,15 @@ function openCleanup() {
 function closeCleanup() {
     document.getElementById('cleanup-modal').style.display = 'none';
 }
+// Escape closes any open modal
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        var modals = document.querySelectorAll('.modal-overlay');
+        for (var i = 0; i < modals.length; i++) {
+            if (modals[i].style.display === 'flex') modals[i].style.display = 'none';
+        }
+    }
+});
 function toggleCleanupAll(master) {
     var cbs = document.querySelectorAll('#cleanup-modal input[type=checkbox][name]');
     for (var i = 0; i < cbs.length; i++) cbs[i].checked = master.checked;
@@ -1275,19 +1301,22 @@ function updateDiskHealth() {
     fetch('/api/health', {credentials: 'same-origin'})
     .then(function(r) { return r.json().catch(function() { return {}; }); })
     .then(function(data) {
-        var el = document.getElementById('disk-indicator');
-        if (!el) return;
+        var fillEl = document.getElementById('disk-bar-fill');
+        var textEl = document.getElementById('disk-indicator-text');
+        var wrapEl = document.getElementById('disk-indicator-wrap');
+        if (!textEl) return;
         var freeText = data.free_gb != null ? (data.free_gb + '\u00a0\u0413\u0411') : '...';
-        if (data.status === 'critical') {
-            el.textContent = '\uD83D\uDD34 ' + freeText;
-            el.style.color = '#e74c3c';
-        } else if (data.status === 'warning') {
-            el.textContent = '\u26A0 ' + freeText;
-            el.style.color = '#f39c12';
-        } else {
-            el.textContent = '\uD83D\uDCBE ' + freeText;
-            el.style.color = '#aaa';
+        textEl.textContent = freeText;
+        if (fillEl) {
+            var pct = (data.total_gb && data.free_gb != null)
+                ? Math.round((1 - data.free_gb / data.total_gb) * 100) : 0;
+            fillEl.style.width = pct + '%';
+            var cls = 'disk-bar-fill';
+            if (data.status === 'critical') cls += ' crit';
+            else if (data.status === 'warning') cls += ' warn';
+            fillEl.className = cls;
         }
+        if (wrapEl) wrapEl.title = freeText + ' \u0441\u0432\u043e\u0431\u043e\u0434\u043d\u043e';
     }).catch(function() {});
 }
 """
@@ -1308,44 +1337,43 @@ def _page(title: str, body: str, stats: str = "", active_nav: str = "series",
             '</div>'
         )
 
-    # Monitor status indicator
+    # Monitor state for navbar button
     mon = _MonitorState.status_dict()
-    if mon["active"]:
-        monitor_html = (
-            '<span style="margin-left:16px; font-size:13px; color:#2ecc71; font-weight:600">'
-            '&#9679; Мониторинг'
-            '</span>'
-        )
-    else:
-        monitor_html = ""
-
-    # Ambiguous series indicator
-    ambiguous_count = _count_ambiguous_series()
-    if ambiguous_count > 0:
-        monitor_html += (
-            f'<a href="/?filter=ambiguous" style="margin-left:12px; font-size:13px; '
-            f'color:#f39c12; font-weight:600; text-decoration:none">'
-            f'&#9888; {ambiguous_count} спорных'
-            f'</a>'
-        )
-
-    # Test mode / autoprint indicator
     _cfg = getattr(SeriesBrowserHandler, "config", None) or {}
     _print_cfg = _cfg.get("print", {})
     _debug_default = "true" if _cfg.get("output", {}).get("show_score_badge", True) else "false"
     _monitor_active = "true" if mon["active"] else "false"
     _monitor_series = int(mon.get("series_processed", 0))
     _monitor_last = json.dumps(mon.get("last_activity", ""), ensure_ascii=False)
-    if _print_cfg.get("test_mode", False):
-        monitor_html += (
-            '<span style="margin-left:12px; font-size:13px; color:#f1c40f; '
-            'font-weight:700; background:#333; padding:2px 8px; border-radius:6px">'
-            'TEST MODE</span>'
+
+    # Monitor button in navbar (always visible on all pages)
+    if mon["active"]:
+        monitor_btn_html = (
+            '<button id="monitor-btn-area" class="monitor-btn stop" onclick="toggleMonitor(\'stop\')">'
+            '<span class="pulse-dot"></span>'
+            f'Серий: {_monitor_series} \u00b7 Остановить'
+            '</button>'
         )
-    elif _print_cfg.get("autoprint", False):
-        monitor_html += (
-            '<span style="margin-left:12px; font-size:13px; color:#2ecc71; font-weight:600">'
-            '&#9113; Автопечать</span>'
+    else:
+        monitor_btn_html = (
+            '<button id="monitor-btn-area" class="monitor-btn start" onclick="toggleMonitor(\'start\')">'
+            '&#9654; Запустить'
+            '</button>'
+        )
+
+    # Stats badge (only on series pages)
+    stats_html = ""
+    if stats:
+        stats_html = f'<span class="stats-badge">{stats}</span>'
+
+    # Ambiguous indicator for stats
+    ambiguous_count = _count_ambiguous_series()
+    if ambiguous_count > 0:
+        stats_html += (
+            f'<a href="/?filter=ambiguous" style="font-size:13px; '
+            f'color:#f39c12; font-weight:600; text-decoration:none; white-space:nowrap">'
+            f'&#9888; {ambiguous_count}'
+            f'</a>'
         )
 
     return (
@@ -1356,32 +1384,38 @@ def _page(title: str, body: str, stats: str = "", active_nav: str = "series",
         f'<style>{_CSS}</style>\n'
         '</head><body>\n'
         '<nav class="navbar">\n'
-        '  <a href="/" class="brand">&#127935; Kanatka</a>\n'
-        '  <div class="nav-links">\n'
+        '  <a href="/" class="brand"><span>&#127935;</span> Kanatka</a>\n'
+        '  <div class="page-switcher">\n'
         f'    <a href="/" class="{nav_cls("series")}">Серии</a>\n'
-        f'    <a href="/sheets" class="{nav_cls("sheets")}">&#128196; Листы</a>\n'
-        f'    <a href="/settings" class="{nav_cls("settings")}">&#9881; Настройки</a>\n'
-        '    <button class="nav-btn" onclick="refreshPage(); return false;">Обновить</button>\n'
-        '    <button class="nav-btn" onclick="openZipModal(); return false;">&#128190; Архив</button>\n'
-        '    <button id="debug-toggle" class="nav-btn" onclick="toggleDebugMode(); return false;">Debug</button>\n'
-        '    <button class="nav-btn" onclick="openCleanup(); return false;" '
-        'style="color:#ff7675; border-color:rgba(255,118,117,0.35)">&#128465; Очистка</button>\n'
-        '    <button class="nav-btn" onclick="openReadme(); return false;" '
-        'style="background:#e74c3c; color:#fff; border-color:#c0392b; font-weight:700">&#128214; Инструкция</button>\n'
+        f'    <a href="/sheets" class="{nav_cls("sheets")}">Листы</a>\n'
         '  </div>\n'
-        f'  {view_switcher_html}'
+        '  <div class="nav-divider"></div>\n'
+        '  <div class="action-buttons">\n'
+        '    <button class="action-btn" data-tooltip="Обновить" onclick="refreshPage(); return false;">&#x21BB;</button>\n'
+        '    <button class="action-btn" data-tooltip="Архив (ZIP)" onclick="openZipModal(); return false;">&#x1F4E6;</button>\n'
+        '    <button id="debug-toggle" class="action-btn" data-tooltip="Debug score" onclick="toggleDebugMode(); return false;">&#x1F50D;</button>\n'
+        '    <button class="action-btn danger" data-tooltip="Очистка" onclick="openCleanup(); return false;">&#x2716;</button>\n'
+        '    <button class="action-btn" data-tooltip="Инструкция" onclick="openReadme(); return false;">&#x2753;</button>\n'
+        '  </div>\n'
+        '  <div class="nav-divider"></div>\n'
+        f'  {monitor_btn_html}\n'
+        '  <div class="nav-spacer"></div>\n'
         '  <div class="nav-right">\n'
-        '    <span id="disk-indicator" style="font-size:13px; font-weight:600; color:#aaa; white-space:nowrap">'
-        '\U0001F4BE ...</span>\n'
-        f'    {monitor_html}'
-        + (f'    <span style="opacity:0.4">|</span><span>{stats}</span>\n' if stats else '')
-        + '  </div>\n'
+        f'    {view_switcher_html}\n'
+        '    <div class="disk-indicator" id="disk-indicator-wrap">'
+        '<div class="disk-bar-track"><div class="disk-bar-fill" id="disk-bar-fill"></div></div>'
+        '<span class="disk-text" id="disk-indicator-text">...</span>'
+        '</div>\n'
+        f'    {stats_html}\n'
+        f'    <a href="/settings" class="settings-btn" title="Настройки">&#9881;</a>\n'
+        '  </div>\n'
         '</nav>\n'
         f'<div class="container">{body}</div>\n'
-        '<div id="cleanup-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%;'
-        ' background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center">'
-        '<div style="background:#fff; border-radius:16px; padding:28px 32px; max-width:420px; width:90%">'
-        '<h3 style="margin-top:0">&#128465; Очистка рабочих папок</h3>'
+        '<div id="cleanup-modal" class="modal-overlay" onclick="if(event.target===this)closeCleanup()">'
+        '<div class="modal-content" style="max-width:420px">'
+        '<div class="modal-header"><h3>Очистка рабочих папок</h3>'
+        '<button class="modal-close" onclick="closeCleanup()">&times;</button></div>'
+        '<div class="modal-body">'
         '<p style="color:#666; font-size:13px; margin-bottom:16px">Выберите папки для очистки. Файлы будут удалены безвозвратно. '
         'Карточки на вкладке «Серии» строятся по отчётам из logs, поэтому без последнего пункта история серий останется видимой.</p>'
         '<div style="display:flex; flex-direction:column; gap:10px">'
@@ -1399,12 +1433,13 @@ def _page(title: str, body: str, stats: str = "", active_nav: str = "series",
         '<div style="display:flex; gap:12px; margin-top:20px; justify-content:flex-end">'
         '<button onclick="closeCleanup()" style="padding:8px 20px; border:1px solid #ddd; border-radius:8px; background:#fff; cursor:pointer">Отмена</button>'
         '<button onclick="runCleanup()" style="padding:8px 20px; border:none; border-radius:8px; background:#e74c3c; color:#fff; cursor:pointer; font-weight:600">Удалить</button>'
-        '</div></div></div>\n'
+        '</div></div></div></div>\n'
         '<div id="toast" role="status" aria-live="polite"></div>\n'
-        '<div id="zip-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%;'
-        ' background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center">'
-        '<div style="background:#fff; border-radius:16px; padding:28px 32px; max-width:400px; width:90%">'
-        '<h3 style="margin-top:0">&#128190; Архив ZIP</h3>'
+        '<div id="zip-modal" class="modal-overlay" onclick="if(event.target===this)closeZipModal()">'
+        '<div class="modal-content" style="max-width:400px">'
+        '<div class="modal-header"><h3>Архив ZIP</h3>'
+        '<button class="modal-close" onclick="closeZipModal()">&times;</button></div>'
+        '<div class="modal-body">'
         '<p style="color:#666; font-size:13px; margin-bottom:16px">ZIP с лучшими фото и листами будет сохранён на Рабочий стол.</p>'
         '<div style="display:flex; flex-direction:column; gap:10px; margin-bottom:16px">'
         '<label style="cursor:pointer"><input type="radio" name="zip-preset" value="all" checked onchange="toggleZipCustom()"> Всё</label>'
@@ -1419,19 +1454,16 @@ def _page(title: str, body: str, stats: str = "", active_nav: str = "series",
         '<div style="display:flex; gap:12px; justify-content:flex-end">'
         '<button onclick="closeZipModal()" style="padding:8px 20px; border:1px solid #ddd; border-radius:8px; background:#fff; cursor:pointer">Отмена</button>'
         '<button id="zip-run-btn" onclick="runZipExport()" style="padding:8px 20px; border:none; border-radius:8px; background:#3498db; color:#fff; cursor:pointer; font-weight:600">Создать ZIP</button>'
-        '</div></div></div>\n'
-        '<div id="readme-modal" onclick="if(event.target===this)closeReadme()" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%;'
-        ' background:rgba(0,0,0,0.6); z-index:9999; align-items:center; justify-content:center">'
-        '<div style="background:#fff; border-radius:16px; padding:28px 32px; max-width:720px; width:94%;'
-        ' max-height:82vh; display:flex; flex-direction:column">'
-        '<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; flex-shrink:0">'
-        '<h2 style="margin:0; color:#1a1a2e">&#128214; Инструкция</h2>'
-        '<button onclick="closeReadme()" style="font-size:22px; background:none; border:none; cursor:pointer; color:#666; line-height:1">&times;</button>'
-        '</div>'
-        '<div id="readme-content" style="overflow-y:auto; flex:1; font-size:14px; line-height:1.6; color:#333">'
+        '</div></div></div></div>\n'
+        '<div id="readme-modal" class="modal-overlay" onclick="if(event.target===this)closeReadme()">'
+        '<div class="modal-content" style="max-width:720px; max-height:82vh; display:flex; flex-direction:column">'
+        '<div class="modal-header"><h3>Инструкция</h3>'
+        '<button class="modal-close" onclick="closeReadme()">&times;</button></div>'
+        '<div class="modal-body" style="overflow-y:auto; flex:1; padding-bottom:0">'
+        '<div id="readme-content" style="font-size:14px; line-height:1.6; color:#333">'
         '<p style="color:#aaa">Загрузка...</p>'
-        '</div>'
-        '<div style="margin-top:16px; flex-shrink:0; text-align:right">'
+        '</div></div>'
+        '<div style="padding:16px 28px; flex-shrink:0; text-align:right">'
         '<button onclick="closeReadme()" style="padding:8px 24px; border:none; border-radius:8px; background:#1a1a2e; color:#fff; cursor:pointer; font-weight:600">Закрыть</button>'
         '</div></div></div>\n'
         '<div id="fullscreen" class="fullscreen-overlay" onclick="closeLightbox(event)">'
@@ -1532,9 +1564,8 @@ def _render_series_card(series: dict, config: dict, history_mode: bool = False) 
     action_html = ""
     if not history_mode:
         action_html = (
-            f'<a href="/nearby/{name}" class="nearby-btn" style="font-size:12px; padding:5px 12px">Рядом</a>'
-            + (f'<button onclick="confirmAmbiguous(\'{name}\')" class="nearby-btn" '
-               f'style="font-size:12px; padding:5px 12px; background:#27ae60; color:#fff; border:none; cursor:pointer">'
+            (f'<button onclick="confirmAmbiguous(\'{name}\')" '
+               f'style="font-size:12px; padding:5px 12px; background:#27ae60; color:#fff; border:none; cursor:pointer; border-radius:8px; font-weight:700">'
                f'Подтвердить</button>'
                if status == "ambiguous_manual_review" else "")
         )
@@ -1626,36 +1657,8 @@ def _render_series_list(all_series: list[dict], config: dict, page: int = 1, fil
         parts.append('</div>')
         pagination = "\n".join(parts)
 
-    # Monitor control bar
-    mon = _MonitorState.status_dict()
-    if mon["active"]:
-        monitor_bar = (
-            '<div style="background:#e8f5e9; border-radius:12px; padding:16px 20px; margin-bottom:16px; '
-            'display:flex; align-items:center; justify-content:space-between; border:1px solid #a5d6a7">'
-            '<div>'
-            '<span style="color:#2e7d32; font-weight:700; font-size:15px">&#9679; Мониторинг активен</span>'
-            f'<span style="color:#666; font-size:13px; margin-left:12px">Обработано серий: {mon["series_processed"]}</span>'
-            + (f'<span style="color:#888; font-size:13px; margin-left:12px">Последнее: {mon["last_activity"]}</span>'
-               if mon["last_activity"] else "")
-            + '</div>'
-            '<div id="monitor-btn-area"><button onclick="toggleMonitor(\'stop\')" style="background:#e74c3c; color:#fff; border:none; '
-            'padding:8px 20px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer">Остановить</button></div>'
-            '</div>'
-        )
-    else:
-        err_html = (f'<span style="color:#e74c3c; font-size:13px; margin-left:12px">{mon["error"]}</span>'
-                    if mon["error"] else "")
-        monitor_bar = (
-            '<div style="background:#fff; border-radius:12px; padding:16px 20px; margin-bottom:16px; '
-            'display:flex; align-items:center; justify-content:space-between; box-shadow:0 2px 8px rgba(0,0,0,0.06)">'
-            '<div>'
-            '<span style="color:#666; font-size:14px">&#128247; Автономный режим: мониторинг входящих фото</span>'
-            + err_html
-            + '</div>'
-            '<div id="monitor-btn-area"><button onclick="toggleMonitor(\'start\')" style="background:#2ecc71; color:#fff; border:none; '
-            'padding:8px 20px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer">&#9654; Запустить</button></div>'
-            '</div>'
-        )
+    # Monitor bar removed in v3 — control is now in navbar
+    monitor_bar = ""
 
     empty_state = ""
     if not cards:
@@ -1702,7 +1705,6 @@ def _render_series_detail(series: dict, selected_dir: Path, config: dict) -> str
     breadcrumb = (
         '<div class="breadcrumb">'
         '<a href="/">&larr; Все серии</a> / ' + name
-        + (f' <a href="/nearby/{name}" class="nearby-btn">Посмотреть рядом</a>' if live_series else "")
         + '</div>'
     )
 
@@ -1724,7 +1726,7 @@ def _render_series_detail(series: dict, selected_dir: Path, config: dict) -> str
         rescue_name = f"{name}_{fname}"
         already_rescued = rescue_name in existing_selected or selected_file == rescue_name
         if already_rescued:
-            rescue_html = '<span class="rescued-badge">Уже выбрано</span>'
+            rescue_html = ''  # card visual highlight handled via .photo-card--selected CSS
         elif rescue_source is None:
             rescue_html = '<span class="rescued-badge" style="background:#bdc3c7">Исходник очищен</span>'
         else:
@@ -1734,7 +1736,7 @@ def _render_series_detail(series: dict, selected_dir: Path, config: dict) -> str
                 f'<input type="hidden" name="path" value="{rescue_source}">'
                 f'<input type="hidden" name="series" value="{name}">'
                 f'<input type="hidden" name="file_name" value="{fname}">'
-                f'<button type="button" class="rescue-btn" onclick="confirmRescue(\'{form_id}\', \'{fname}\')">Спасти фото</button>'
+                f'<button type="button" class="rescue-btn replace-btn" onclick="confirmRescue(\'{form_id}\', \'{fname}\')">Заменить</button>'
                 '</form>'
             )
 
@@ -1761,8 +1763,9 @@ def _render_series_detail(series: dict, selected_dir: Path, config: dict) -> str
                 'background:#eef1f5; color:#6b7280; font-weight:600; min-height:220px">Файл очищен</div>'
             )
 
+        card_class = "photo-card photo-card--selected" if already_rescued else "photo-card"
         cards.append(
-            '<div class="photo-card">'
+            f'<div class="{card_class}">'
             f'{thumb_html}'
             '<div class="photo-info">'
             f'<div class="photo-name">{fname}</div>'
@@ -1781,166 +1784,16 @@ def _render_series_detail(series: dict, selected_dir: Path, config: dict) -> str
             '</div>'
         )
     body += '<div class="photo-grid">' + "".join(cards) + '</div>'
+    body += (
+        '<script>'
+        '(function(){'
+        'var grid=document.querySelector(".photo-grid");'
+        'var sel=grid&&grid.querySelector(".photo-card--selected");'
+        'if(sel&&grid.firstChild!==sel){grid.insertBefore(sel,grid.firstChild);}'
+        '})();'
+        '</script>'
+    )
     return _page(f"Kanatka — {name}", body)
-
-
-def _render_nearby(
-    center_series: dict,
-    all_series: list[dict],
-    selected_dir: Path,
-    config: dict,
-    radius: int = 3,
-) -> str:
-    """Render the temporal browser showing photos from neighboring series.
-
-    Shows ``radius`` series before and after the center series, with
-    checkboxes for batch selection and a sticky action bar at the bottom.
-    """
-    center_name = center_series.get("series", "?")
-    existing_selected = (
-        {p.name for p in selected_dir.iterdir() if p.suffix.lower() in {".jpg", ".jpeg", ".png"}}
-        if selected_dir.exists() else set()
-    )
-
-    # Find index of center series
-    center_idx = None
-    for i, s in enumerate(all_series):
-        if s.get("series") == center_name:
-            center_idx = i
-            break
-    if center_idx is None:
-        return _page("Ошибка", f"<h2>Серия {center_name} не найдена</h2>")
-
-    # Get neighboring series
-    start = max(0, center_idx - radius)
-    end = min(len(all_series), center_idx + radius + 1)
-    nearby = all_series[start:end]
-
-    total_photos = sum(len(s.get("photos", [])) for s in nearby)
-    stats = f"{len(nearby)} серий ({total_photos} фото) вокруг {center_name}"
-
-    breadcrumb = (
-        '<div class="breadcrumb">'
-        '<a href="/">&larr; Все серии</a> / '
-        f'<a href="/series/{center_name}">{center_name}</a> / '
-        'Соседние серии</div>'
-    )
-
-    body_parts = [breadcrumb]
-    body_parts.append(
-        f'<h2 style="margin-bottom:8px">Серии рядом с {center_name}</h2>'
-        '<p style="color:#666; margin-bottom:16px; font-size:14px">'
-        'Выберите нужные фото галочками и нажмите &laquo;Отправить на печать&raquo; внизу. '
-        'Выбранные фото будут скопированы в папку selected и синхронизированы в сетевую папку.</p>'
-        '<div style="margin-bottom:16px">'
-        '<button onclick="selectAll()" class="rescue-btn" style="font-size:12px; padding:4px 12px">Выбрать все</button> '
-        '<button onclick="selectNone()" class="rescue-btn" style="font-size:12px; padding:4px 12px; background:#95a5a6">Снять все</button>'
-        '</div>'
-    )
-
-    for series in nearby:
-        name = series.get("series", "?")
-        status = series.get("status", "unknown")
-        photos = series.get("photos", [])
-        is_center = name == center_name
-
-        if status == "selected":
-            badge_html = '<span class="badge badge-selected">Выбрано</span>'
-        elif status == "discarded_empty":
-            badge_html = '<span class="badge badge-empty">Пустое</span>'
-        else:
-            badge_html = '<span class="badge badge-rejected">Отклонено</span>'
-
-        divider_cls = "series-divider current" if is_center else "series-divider"
-        center_marker = " (текущая)" if is_center else ""
-        body_parts.append(
-            f'<div class="{divider_cls}">'
-            f'<span>{name}{center_marker} &mdash; {len(photos)} фото</span>'
-            f'<span>{badge_html}</span>'
-            '</div>'
-        )
-
-        cards = []
-        group_name = f"nearby-{name}"
-        for index, photo in enumerate(photos):
-            fname = photo.get("file_name", "?")
-            fpath = photo.get("file_path", "")
-            score = photo.get("score", 0)
-            present = photo.get("subject_present", False)
-            fallback = photo.get("person_fallback", False)
-            actual_path = _find_existing_photo_for_series(photo, name, config, selected_file=series.get("selected_file", ""))
-            rescue_source = _find_rescue_source(photo, config)
-
-            score_val = score if isinstance(score, (int, float)) else 0
-            detect_info = _detect_label(present, fallback)
-            inline_debug_html = _build_inline_debug_html(photo)
-
-            rescue_name = f"{name}_{fname}"
-            already = rescue_name in existing_selected
-            already_html = ' <span class="rescued-badge">Уже</span>' if already else ""
-
-            if actual_path is not None:
-                thumb_src = f'/photo?path={quote(str(actual_path), safe="")}&amp;max_side=400'
-                full_src = f'/photo?path={quote(str(actual_path), safe="")}&amp;max_side=2200'
-                payload = _build_lightbox_payload_attr(
-                    full_src,
-                    fname,
-                    f"{name} · {detect_info}",
-                    _build_lightbox_debug_html(photo),
-                    score=float(score_val),
-                )
-                thumb_html = (
-                    f'<img class="photo-thumb js-lightbox-trigger" src="{thumb_src}" alt="{fname}" loading="lazy"'
-                    f' data-lightbox-group="{group_name}" data-lightbox-index="{index}"'
-                    f' data-lightbox-payload="{payload}"'
-                    f' onclick="openLightboxFromElement(this, event)"'
-                    " onerror=\"this.style.display='none'\">"
-                )
-            else:
-                thumb_html = (
-                    '<div class="photo-thumb" style="display:flex; align-items:center; justify-content:center; '
-                    'background:#eef1f5; color:#6b7280; font-weight:600; min-height:220px">Файл очищен</div>'
-                )
-
-            checkbox_html = ""
-            if rescue_source is not None and not already:
-                checkbox_html = (
-                    f'<input type="checkbox" class="photo-checkbox"'
-                    f' data-path="{rescue_source}" data-series="{name}"'
-                    ' onchange="toggleCard(this)">'
-                )
-
-            cards.append(
-                '<div class="photo-card">'
-                + f'{checkbox_html}'
-                + f'{thumb_html}'
-                + '<div class="photo-info">'
-                + f'<div class="photo-name">{fname}</div>'
-                + f'<div class="photo-score">Score: {_score_span(score_val)} &middot; {detect_info}{already_html}</div>'
-                + f'{inline_debug_html}'
-                + ('<div style="margin-top:8px; color:#7b8794; font-size:12px">Исходник очищен, отправка недоступна.</div>'
-                   if rescue_source is None and not already else '')
-                + '</div></div>'
-            )
-
-        body_parts.append('<div class="photo-grid">' + "".join(cards) + '</div>')
-
-    # Batch action bar
-    body_parts.append(
-        f'<form id="batch-form" method="POST" action="/rescue-batch">'
-        f'<input type="hidden" name="redirect" value="/nearby/{center_name}">'
-        '<div id="batch-inputs"></div>'
-        '</form>'
-        '<div class="batch-bar">'
-        '<div class="count">Выбрано: <span id="batch-count">0</span> фото</div>'
-        '<button id="batch-send" onclick="submitBatch()" disabled>'
-        'Отправить на печать'
-        '</button>'
-        '</div>'
-    )
-
-    body = "\n".join(body_parts)
-    return _page(f"Kanatka — рядом с {center_name}", body, stats)
 
 
 # ---------------------------------------------------------------------------
@@ -2114,18 +1967,6 @@ _SETTINGS_SCHEMA: list[tuple[str, str, list[tuple]]] = [
         ],
     ),
     (
-        "Сеть",
-        "Автосинхронизация в сетевую папку типографии.",
-        [
-            ("network", "auto_sync_sheets", "Автосинхронизация",
-             "Автоматически копировать новые листы в сетевую папку после сборки.",
-             "checkbox", {}),
-            ("network", "output_path", "Сетевая папка",
-             "Путь к общей папке (UNC или диск), куда копировать листы. Например: \\\\PRINTER-PC\\kanatka",
-             "text", {}),
-        ],
-    ),
-    (
         "Печать",
         "Автоматическая печать готовых листов.",
         [
@@ -2135,9 +1976,9 @@ _SETTINGS_SCHEMA: list[tuple[str, str, list[tuple]]] = [
             ("print", "test_mode", "Тестовый режим",
              "В тестовом режиме листы формируются, но не печатаются. Включите для безопасной проверки.",
              "checkbox", {}),
-            ("print", "printer_name", "Имя принтера",
-             "Оставьте пустым для принтера по умолчанию.",
-             "text", {}),
+            ("print", "printer_name", "Принтер",
+             "Принтер для печати листов. Оставьте пустым для принтера по умолчанию.",
+             "printer", {}),
         ],
     ),
     (
@@ -2259,8 +2100,14 @@ def _render_sheets_gallery(config: dict) -> str:
         reverse=True,
     )
 
+    sheets_breadcrumb = (
+        '<div class="breadcrumb">'
+        '<a href="/">\u2190 Серии</a> / Листы'
+        '</div>'
+    )
+
     if not sheet_files:
-        body = '<h2 style="text-align:center; color:#999; margin-top:60px">Нет собранных листов</h2>'
+        body = sheets_breadcrumb + '<h2 style="text-align:center; color:#999; margin-top:60px">Нет собранных листов</h2>'
         return _page("Kanatka — Листы", body, active_nav="sheets", page_key="sheets")
 
     cards = []
@@ -2302,7 +2149,6 @@ def _render_sheets_gallery(config: dict) -> str:
 
     js = r"""
 function printSheet(name) {
-    if (!confirm('Отправить лист ' + name + ' на печать?')) return;
     fetch('/api/print-sheet', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -2314,7 +2160,7 @@ function printSheet(name) {
 }
 """
 
-    body = (
+    body = sheets_breadcrumb + (
         f'<h2>Собранные листы '
         f'<span style="font-size:14px; color:{mode_color}; font-weight:700">{mode_label}</span>'
         f'</h2>'
@@ -2332,7 +2178,13 @@ function printSheet(name) {
 def _render_settings(config: dict) -> str:
     """Render the engineer settings page with all tunable parameters."""
     groups = []
-    for group_title, group_desc, settings in _SETTINGS_SCHEMA:
+    sidebar_links = [
+        '<a href="#" class="all-sections-link" onclick="showSection(null); return false;"'
+        ' style="font-weight:700">Все разделы</a>\n'
+    ]
+    for idx, (group_title, group_desc, settings) in enumerate(_SETTINGS_SCHEMA):
+        section_id = f"section-{idx}"
+        sidebar_links.append(f'<a href="#" data-idx="{idx}" onclick="showSection({idx}); return false;">{group_title}</a>')
         rows = []
         for section, key, label, hint, input_type, extra in settings:
             current = config.get(section, {}).get(key, "")
@@ -2373,6 +2225,22 @@ def _render_settings(config: dict) -> str:
                 control = (
                     f'<input type="text" id="{field_id}" name="{field_id}" value="{val}">'
                 )
+            elif input_type == "printer":
+                current_val = config.get(section, {}).get(key, "")
+                display = current_val if current_val else "(по умолчанию)"
+                control = (
+                    f'<div style="display:flex;gap:8px;align-items:center">'
+                    f'<select id="printer-select-{section}-{key}"'
+                    f' name="{section}.{key}"'
+                    f' style="flex:1;padding:6px 10px;border:1px solid #d0d7e2;border-radius:8px;font-size:14px">'
+                    f'<option value="{_html.escape(current_val, quote=True)}">{_html.escape(display)}</option>'
+                    f'</select>'
+                    f'<button type="button"'
+                    f' onclick="loadPrinterList(this.previousElementSibling)"'
+                    f' style="padding:6px 14px;border-radius:8px;border:1px solid #d0d7e2;'
+                    f'background:#f5f7fa;cursor:pointer;font-size:13px">Обновить</button>'
+                    f'</div>'
+                )
             else:
                 control = str(current)
 
@@ -2387,7 +2255,7 @@ def _render_settings(config: dict) -> str:
             )
 
         groups.append(
-            '<div class="settings-group">'
+            f'<div class="settings-group" id="{section_id}">'
             f'<h3>{group_title}</h3>'
             f'<div class="group-desc">{group_desc}</div>'
             + "".join(rows)
@@ -2469,20 +2337,65 @@ if (window.location.hash === '#change-password') {
 }
 """
 
+    printer_js = r"""
+function loadPrinterList(sel) {
+    fetch('/api/list-printers').then(function(r){return r.json();}).then(function(d){
+        var cur = sel.value;
+        while(sel.options.length>0) sel.remove(0);
+        var defOpt = document.createElement('option');
+        defOpt.value = ''; defOpt.text = '(по умолчанию)';
+        sel.add(defOpt);
+        d.printers.forEach(function(p){
+            var opt = document.createElement('option');
+            opt.value = p; opt.text = p;
+            if(p === cur || (!cur && p === d.default)) opt.selected = true;
+            sel.add(opt);
+        });
+    });
+}
+document.addEventListener('DOMContentLoaded', function(){
+    var sel = document.querySelector('select[name="print.printer_name"]');
+    if(sel) loadPrinterList(sel);
+});
+"""
+
+    sidebar_links.append('<a href="#change-password">Пароль</a>')
+    sidebar_html = (
+        '<aside class="settings-sidebar"><nav>'
+        + "".join(sidebar_links)
+        + '</nav></aside>'
+    )
+
+    sidebar_js = r"""
+function showSection(idx) {
+    document.querySelectorAll('.settings-group').forEach(function(g, i) {
+        g.style.display = (idx === null || i === idx) ? '' : 'none';
+    });
+    document.querySelectorAll('.settings-sidebar a[data-idx]').forEach(function(a) {
+        a.classList.toggle('active', idx !== null && parseInt(a.dataset.idx) === idx);
+    });
+    var allLink = document.querySelector('.all-sections-link');
+    if (allLink) allLink.style.fontWeight = idx === null ? '700' : '400';
+}
+"""
+
     body = (
         '<div class="settings-page">'
         '<h2 style="margin-bottom:8px">Настройки инженера ' + logout_btn + '</h2>'
         + first_login_banner +
         '<p style="color:#666; margin-bottom:20px; font-size:14px">'
         'Параметры для полевой настройки программы. Изменения сохраняются в config.json.</p>'
+        '<div class="settings-layout">'
+        + sidebar_html
+        + '<div class="settings-main">'
         + "".join(groups)
         + '<div class="save-bar">'
         '<span id="save-msg" class="save-msg"></span>'
         '<button onclick="saveSettings()">Сохранить настройки</button>'
         '</div>'
         + change_pw_html
-        + '</div>'
-        f'<script>{save_js}\n{scroll_js}</script>'
+        + '</div></div></div>'
+        f'<script>{save_js}\n{scroll_js}\n{printer_js}\n{sidebar_js}</script>'
     )
     return _page("Kanatka — Настройки", body, active_nav="settings")
 
@@ -2844,17 +2757,6 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
             else:
                 self._send_html("<h1>Серия не найдена</h1>", 404)
 
-        elif path.startswith("/nearby/"):
-            series_name = path.split("/nearby/", 1)[1]
-            series = self._get_series()
-            found = next((s for s in series if s.get("series") == series_name), None)
-            if found:
-                selected_dir = Path(self.config["paths"]["output_selected"])
-                html = _render_nearby(found, series, selected_dir, self.config)
-                self._send_html(html)
-            else:
-                self._send_html("<h1>Серия не найдена</h1>", 404)
-
         elif path == "/api/health":
             try:
                 from watcher import check_disk_space
@@ -2927,6 +2829,19 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
                     self.send_error(500)
             else:
                 self.send_error(404)
+
+        elif path == "/api/list-printers":
+            try:
+                import win32print
+                raw = win32print.EnumPrinters(
+                    win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
+                )
+                printers = [p[2] for p in raw]
+                default = win32print.GetDefaultPrinter()
+            except Exception:
+                printers = []
+                default = ""
+            self._send_json({"printers": printers, "default": default})
 
         else:
             self.send_error(404)
@@ -3051,30 +2966,13 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
                     dest = rescue_photo(source, selected_dir, series_name)
                     _sync_rescued_to_network([dest], self.config)
                     SeriesBrowserHandler._series_cache = None
+                    from sheet_composer import compose_if_ready
+                    try:
+                        compose_if_ready(self.config)
+                    except Exception:
+                        pass  # non-blocking: monitoring must not be interrupted
 
             self._send_redirect(f"/series/{series_name}")
-
-        elif parsed.path == "/rescue-batch":
-            # Batch rescue from nearby browser
-            count = int(params.get("count", ["0"])[0])
-            redirect_to = params.get("redirect", ["/"])[0]
-
-            photos_to_rescue = []
-            for i in range(count):
-                fpath = params.get(f"path_{i}", [""])[0]
-                series_name = params.get(f"series_{i}", [""])[0]
-                if fpath and series_name:
-                    photos_to_rescue.append({
-                        "path": fpath,
-                        "series": series_name,
-                    })
-
-            if photos_to_rescue:
-                selected_dir = Path(self.config["paths"]["output_selected"])
-                rescue_batch(photos_to_rescue, selected_dir, self.config)
-                SeriesBrowserHandler._series_cache = None
-
-            self._send_redirect(redirect_to)
 
         else:
             self.send_error(404)

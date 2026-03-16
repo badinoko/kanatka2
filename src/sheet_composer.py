@@ -8,6 +8,7 @@ from pathlib import Path
 from PIL import Image, ImageOps
 
 from badge_utils import add_score_badge
+from image_utils import list_jpeg_files
 from metadata_utils import build_photo_metadata_path, photo_metadata_enabled
 
 
@@ -59,7 +60,7 @@ def _save_sheet_meta(output_path: Path, batch: list[Path], columns: int) -> None
     for pos, image_path in enumerate(batch):
         score_data = load_score_overlay_data(image_path)
         name = image_path.name
-        # Extract series prefix (e.g. "SER001" from "SER001_img.jpg")
+        # Extract series prefix (e.g. "S_1" from "S_1_img.jpg")
         series = name.split("_")[0] if "_" in name else name
         photos.append({
             "position": pos,
@@ -133,6 +134,28 @@ def compose_pending_sheets(config: dict, logger, allow_partial: bool | None = No
     return generated_sheets
 
 
+def compose_if_ready(config: dict, logger=None) -> bool:
+    """Compose a sheet immediately if selected/ has >= sheet capacity photos.
+
+    Called after priority rescue (operator 'Заменить' action).
+    Returns True if a sheet was composed and printed, False if not enough photos yet.
+    """
+    if logger is None:
+        import logging
+        logger = logging.getLogger(__name__)
+
+    selected_dir = Path(config["paths"]["output_selected"])
+    photos = list_jpeg_files(selected_dir) if selected_dir.exists() else []
+
+    sheet_cfg = config.get("sheet", {})
+    capacity = sheet_cfg.get("photos_per_sheet", sheet_cfg.get("grid_columns", 2) * sheet_cfg.get("grid_rows", 4))
+
+    if len(photos) >= capacity:
+        compose_pending_sheets(config, logger=logger)
+        return True
+    return False
+
+
 def load_score_overlay_data(image_path: Path) -> dict[str, object]:
     config = _load_runtime_config()
     if config and photo_metadata_enabled(config):
@@ -177,7 +200,7 @@ def _load_score_data_from_reports(image_path: Path) -> dict[str, object]:
     if not log_dir.exists():
         return {"score": None, "score_breakdown": None, "scoring_weights": None, "raw_score": None}
 
-    for report_path in sorted(log_dir.glob("ser*_report.json")):
+    for report_path in sorted(log_dir.glob("s_*_report.json")):
         try:
             report = json.loads(report_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:

@@ -40,3 +40,4 @@ archive/workdir_old_*/
 
 # Claude Code local settings
 .claude/
+.superpowers/

@@ -24,13 +24,13 @@ class SheetMetadataFallbackTests(unittest.TestCase):
             selected_dir.mkdir()
             logs_dir.mkdir()
 
-            image_path = selected_dir / "SER001_example.jpg"
+            image_path = selected_dir / "S_1_example.jpg"
             image_path.write_bytes(b"stub")
 
             report = {
-                "series": "SER001",
+                "series": "S_1",
                 "status": "selected",
-                "selected_file": "SER001_example.jpg",
+                "selected_file": "S_1_example.jpg",
                 "source_file": "example.jpg",
                 "best_score": 44.5,
                 "photos": [
@@ -42,7 +42,7 @@ class SheetMetadataFallbackTests(unittest.TestCase):
                     }
                 ],
             }
-            (logs_dir / "ser001_report.json").write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+            (logs_dir / "s_1_report.json").write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
 
             data = _load_score_data_from_reports(image_path)
 
