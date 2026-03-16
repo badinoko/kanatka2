@@ -28,6 +28,8 @@ a = Analysis(
         (str(src_dir / "config.json"), "."),
         (str(models_dir / "face_landmarker.task"), "models"),
         (str(models_dir / "face_detector.tflite"), "models"),
+        # OpenCV Haar cascade XML files (needed for upper body detection fallback)
+        (str(Path(site.getsitepackages()[-1]) / "cv2" / "data"), "cv2/data"),
     ],
     hiddenimports=[
         "mediapipe",

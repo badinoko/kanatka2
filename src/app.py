@@ -6,16 +6,34 @@ instead of a browser tab. This is the primary entry point for end users.
 from __future__ import annotations
 
 import sys
+import traceback
 from pathlib import Path
 
-# Ensure src/ is importable when running as script or from PyInstaller bundle
-_src_dir = Path(__file__).resolve().parent
-if str(_src_dir) not in sys.path:
-    sys.path.insert(0, str(_src_dir))
 
-from config_utils import ensure_runtime_directories, load_config
-from logger_setup import build_logger
-from series_browser import start_server
+def _crash_log(msg: str) -> None:
+    """Write crash info next to the executable so we can diagnose EXE issues."""
+    try:
+        if getattr(sys, "frozen", False):
+            log_path = Path(sys.executable).parent / "crash_log.txt"
+        else:
+            log_path = Path(__file__).resolve().parent.parent / "crash_log.txt"
+        log_path.write_text(msg, encoding="utf-8")
+    except Exception:
+        pass
+
+
+try:
+    # Ensure src/ is importable when running as script or from PyInstaller bundle
+    _src_dir = Path(__file__).resolve().parent
+    if str(_src_dir) not in sys.path:
+        sys.path.insert(0, str(_src_dir))
+
+    from config_utils import ensure_runtime_directories, load_config
+    from logger_setup import build_logger
+    from series_browser import start_server
+except Exception:
+    _crash_log(f"IMPORT ERROR:\n{traceback.format_exc()}")
+    raise
 
 PORT = 8787
 WINDOW_TITLE = "PhotoSelector — Канатка"
@@ -48,8 +66,12 @@ def launch_app(config_path: str | None = None) -> None:
 
 
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description="PhotoSelector — Канатка")
-    parser.add_argument("--config", default=None, help="Путь до config.json")
-    args = parser.parse_args()
-    launch_app(args.config)
+    try:
+        import argparse
+        parser = argparse.ArgumentParser(description="PhotoSelector — Канатка")
+        parser.add_argument("--config", default=None, help="Путь до config.json")
+        args = parser.parse_args()
+        launch_app(args.config)
+    except Exception:
+        _crash_log(f"RUNTIME ERROR:\n{traceback.format_exc()}")
+        raise
