@@ -1975,9 +1975,9 @@ _SETTINGS_SCHEMA: list[tuple[str, str, list[tuple]]] = [
             ("print", "test_mode", "Тестовый режим",
              "В тестовом режиме листы формируются, но не печатаются. Включите для безопасной проверки.",
              "checkbox", {}),
-            ("print", "printer_name", "Имя принтера",
-             "Оставьте пустым для принтера по умолчанию.",
-             "text", {}),
+            ("print", "printer_name", "Принтер",
+             "Принтер для печати листов. Оставьте пустым для принтера по умолчанию.",
+             "printer", {}),
         ],
     ),
     (
@@ -2221,6 +2221,22 @@ def _render_settings(config: dict) -> str:
                 control = (
                     f'<input type="text" id="{field_id}" name="{field_id}" value="{val}">'
                 )
+            elif input_type == "printer":
+                current_val = config.get(section, {}).get(key, "")
+                display = current_val if current_val else "(по умолчанию)"
+                control = (
+                    f'<div style="display:flex;gap:8px;align-items:center">'
+                    f'<select id="printer-select-{section}-{key}"'
+                    f' name="{section}.{key}"'
+                    f' style="flex:1;padding:6px 10px;border:1px solid #d0d7e2;border-radius:8px;font-size:14px">'
+                    f'<option value="{current_val}">{display}</option>'
+                    f'</select>'
+                    f'<button type="button"'
+                    f' onclick="loadPrinterList(this.previousElementSibling)"'
+                    f' style="padding:6px 14px;border-radius:8px;border:1px solid #d0d7e2;'
+                    f'background:#f5f7fa;cursor:pointer;font-size:13px">Обновить</button>'
+                    f'</div>'
+                )
             else:
                 control = str(current)
 
@@ -2317,6 +2333,28 @@ if (window.location.hash === '#change-password') {
 }
 """
 
+    printer_js = r"""
+function loadPrinterList(sel) {
+    fetch('/api/list-printers').then(function(r){return r.json();}).then(function(d){
+        var cur = sel.value;
+        while(sel.options.length>0) sel.remove(0);
+        var defOpt = document.createElement('option');
+        defOpt.value = ''; defOpt.text = '(по умолчанию)';
+        sel.add(defOpt);
+        d.printers.forEach(function(p){
+            var opt = document.createElement('option');
+            opt.value = p; opt.text = p;
+            if(p === cur || (!cur && p === d.default)) opt.selected = true;
+            sel.add(opt);
+        });
+    });
+}
+document.addEventListener('DOMContentLoaded', function(){
+    var sel = document.querySelector('select[name="print.printer_name"]');
+    if(sel) loadPrinterList(sel);
+});
+"""
+
     sidebar_links.append('<a href="#change-password" onclick="highlightSidebarLink(this)">Пароль</a>')
     sidebar_html = (
         '<aside class="settings-sidebar"><nav>'
@@ -2364,7 +2402,7 @@ function highlightSidebarLink(el) {
         '</div>'
         + change_pw_html
         + '</div></div></div>'
-        f'<script>{save_js}\n{scroll_js}\n{sidebar_js}</script>'
+        f'<script>{save_js}\n{scroll_js}\n{printer_js}\n{sidebar_js}</script>'
     )
     return _page("Kanatka — Настройки", body, active_nav="settings")
 
@@ -2798,6 +2836,19 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
                     self.send_error(500)
             else:
                 self.send_error(404)
+
+        elif path == "/api/list-printers":
+            try:
+                import win32print
+                raw = win32print.EnumPrinters(
+                    win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
+                )
+                printers = [p[2] for p in raw]
+                default = win32print.GetDefaultPrinter()
+            except Exception:
+                printers = []
+                default = ""
+            self._send_json({"printers": printers, "default": default})
 
         else:
             self.send_error(404)
