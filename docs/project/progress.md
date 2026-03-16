@@ -1,5 +1,33 @@
 # Progress
 
+## 2026-03-16 (сессия 3)
+
+**Контекст:** пользователь тестирует установленный EXE, обнаружены критические баги, не проявляющиеся в dev-режиме.
+
+**Корневая причина всех проблем в установленной версии:**
+- `cv2/data/haarcascade_upperbody.xml` не включался в бандл PyInstaller → `CascadeClassifier` возвращал пустой объект → `detectMultiScale` бросал assertion → ВСЕ серии пропускались с warning, ни одна фото не обрабатывалась.
+- Предыдущие ошибки (`No module named 'mediapipe.tasks.c'`, модели не найдены в EXE) были симптомами той же проблемы — неполный бандл PyInstaller.
+
+**Решение:** Полная ревизия `kanatka.spec`:
+- Добавлен `cv2/data` в datas (Haar cascade XMLs).
+- Добавлен `libmediapipe.dll` в binaries (MediaPipe C runtime).
+- `face_utils.py`: `sys._MEIPASS` для резолва моделей в frozen EXE.
+- Расширен `hiddenimports`: `mediapipe.tasks.*`, `serial_dispatcher`, `mediapipe_c_utils`.
+
+**Новый подход к тестированию EXE:**
+- Добавлен crash handler в `app.py` (`_crash_log()`) — пишет `crash_log.txt` рядом с EXE.
+- Тест `console=True` → запуск EXE из dist/ → curl API → проверка файлов.
+- E2E верификация: мониторинг + симулятор → 4 серии обработаны, 1 лист собран, 4 карточки в UI. Полный проход.
+
+**Другие фиксы в этой сессии:**
+- Серии не показывались после сборки листов: `_series_has_live_assets()` и `_resolve_series_card_thumb()` теперь проверяют `output_archive` помимо `output_selected`.
+- Кнопка «Запустить» обновляется в DOM мгновенно через `_setMonitorBtnState()`, без 5-секундной задержки.
+- Модалка инструкции закрывается по клику вне окна (`onclick` на overlay).
+- Подтверждение перед закрытием приложения: `confirm_close=True` в pywebview.
+- `[UninstallDelete]` в `photoselector.iss` — при деинсталляции удаляются `workdir` и `INBOX`.
+
+**Урок:** юнит-тесты (58/58 зелёные) не ловят проблемы PyInstaller-бандла. Нужен E2E тест запуска из dist/.
+
 ## 2026-03-16 (сессия 2)
 
 **Контекст:** продолжение после выпуска v2. Пользователь сообщил, что серии и листы не появляются в UI несмотря на работающий симулятор.
