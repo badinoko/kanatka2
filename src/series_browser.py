@@ -598,23 +598,74 @@ def _build_lightbox_payload_attr(src: str, title: str, subtitle: str, debug_html
 
 _CSS = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, 'Segoe UI', Arial, sans-serif; background: #f0f2f5; color: #1a1a1a; padding-top: 56px; }
+html { overflow-y: scroll; }
+body { font-family: -apple-system, 'Segoe UI', Arial, sans-serif; background: #f0f2f5; color: #1a1a1a; padding-top: 64px; }
 
-/* Sticky Navigation */
+/* Sticky Navigation — v3 redesign */
 .navbar { position: fixed; top: 0; left: 0; right: 0; z-index: 900; background: #1a1a2e; color: #fff;
-          height: 56px; display: flex; align-items: center; padding: 0 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
-.navbar .brand { font-size: 18px; font-weight: 700; margin-right: 32px; color: #fff; text-decoration: none; }
-.navbar .nav-links { display: flex; gap: 4px; }
-.navbar .nav-links a { color: rgba(255,255,255,0.7); text-decoration: none; padding: 8px 16px; border-radius: 6px;
-                       font-size: 14px; font-weight: 500; transition: all 0.15s; }
-.navbar .nav-links a:hover { color: #fff; background: rgba(255,255,255,0.1); }
-.navbar .nav-links a.active { color: #fff; background: rgba(255,255,255,0.15); }
-.navbar .nav-links .nav-btn { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14);
-                               color: rgba(255,255,255,0.82); padding: 8px 14px; border-radius: 6px; cursor: pointer;
-                               font-size: 13px; font-weight: 600; transition: all 0.15s; }
-.navbar .nav-links .nav-btn:hover { color: #fff; background: rgba(255,255,255,0.16); }
-.navbar .nav-links .nav-btn.active { background: #f1c40f; color: #1a1a2e; border-color: #f1c40f; }
-.navbar .nav-right { font-size: 13px; opacity: 0.85; display: flex; align-items: center; gap: 10px; margin-left: 12px; }
+          height: 64px; display: flex; align-items: center; padding: 0 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.25); gap: 12px; }
+.navbar .brand { font-size: 20px; font-weight: 700; color: #fff; text-decoration: none; white-space: nowrap; margin-right: 4px; }
+.navbar .brand span { font-size: 22px; }
+
+/* Page switcher pill */
+.page-switcher { display: flex; background: rgba(255,255,255,0.08); border-radius: 10px; padding: 3px; gap: 2px; flex-shrink: 0; }
+.page-switcher a { text-decoration: none; color: rgba(255,255,255,0.6); padding: 8px 18px; border-radius: 8px;
+                   font-size: 14px; font-weight: 600; transition: all 0.2s; white-space: nowrap; }
+.page-switcher a.active { background: rgba(255,255,255,0.18); color: #fff; }
+.page-switcher a:hover:not(.active) { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.85); }
+
+/* Nav divider */
+.nav-divider { width: 1px; height: 28px; background: rgba(255,255,255,0.15); margin: 0 4px; flex-shrink: 0; }
+
+/* Action buttons — icon-only with tooltips */
+.action-buttons { display: flex; gap: 4px; flex-shrink: 0; }
+.action-btn { width: 42px; height: 42px; display: flex; align-items: center; justify-content: center;
+              background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10); border-radius: 10px;
+              color: rgba(255,255,255,0.75); font-size: 22px; line-height: 1; cursor: pointer; transition: all 0.15s;
+              position: relative; flex-shrink: 0; }
+.action-btn:hover { background: rgba(255,255,255,0.14); color: #fff; transform: translateY(-1px); }
+.action-btn.active-toggle { background: rgba(255,193,7,0.2); border-color: rgba(255,193,7,0.4); color: #ffc107; }
+.action-btn.danger { color: rgba(239,83,80,0.85); }
+.action-btn.danger:hover { background: rgba(239,83,80,0.15); color: #ef5350; }
+.action-btn::after { content: attr(data-tooltip); position: absolute; bottom: -32px; left: 50%;
+                     transform: translateX(-50%); background: #333; color: #fff; padding: 4px 10px;
+                     border-radius: 6px; font-size: 12px; white-space: nowrap;
+                     opacity: 0; pointer-events: none; transition: opacity 0.15s; z-index: 999; }
+.action-btn:hover::after { opacity: 1; }
+
+/* Monitor button — hero element in navbar */
+.monitor-btn { display: flex; align-items: center; gap: 8px; padding: 8px 20px; border-radius: 10px;
+               font-size: 14px; font-weight: 700; cursor: pointer; transition: all 0.2s;
+               border: 2px solid; white-space: nowrap; flex-shrink: 0; background: none; }
+.monitor-btn.start { background: rgba(76,175,80,0.12); border-color: rgba(76,175,80,0.5); color: #66bb6a; }
+.monitor-btn.start:hover { background: rgba(76,175,80,0.25); border-color: #66bb6a; }
+.monitor-btn.stop { background: rgba(76,175,80,0.15); border-color: #4caf50; color: #81c784; }
+.monitor-btn.stop:hover { background: rgba(239,83,80,0.15); border-color: #ef5350; color: #ef5350; }
+.pulse-dot { width: 10px; height: 10px; background: #4caf50; border-radius: 50%; flex-shrink: 0;
+             animation: pulse 1.5s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(76,175,80,0.6); }
+                   50% { opacity: 0.8; box-shadow: 0 0 0 6px rgba(76,175,80,0); } }
+
+.nav-spacer { flex: 1; min-width: 8px; }
+.navbar .nav-right { font-size: 13px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+/* Settings gear */
+.settings-btn { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+                background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.10);
+                border-radius: 10px; color: rgba(255,255,255,0.7); font-size: 22px; cursor: pointer;
+                transition: all 0.2s; flex-shrink: 0; text-decoration: none; }
+.settings-btn:hover { background: rgba(255,255,255,0.14); color: #fff; transform: rotate(30deg); }
+
+/* Disk indicator */
+.disk-indicator { display: flex; align-items: center; gap: 5px; color: rgba(255,255,255,0.65);
+                  font-size: 13px; white-space: nowrap; }
+.disk-indicator .icon { font-size: 16px; }
+.stats-badge { color: rgba(255,255,255,0.55); font-size: 12px; white-space: nowrap; }
+
+/* Responsive: hide stats text at narrow widths */
+@media (max-width: 1400px) { .stats-badge { display: none; } }
+@media (max-width: 1100px) { .disk-indicator .disk-text { display: none; }
+                             .monitor-btn { padding: 8px 14px; font-size: 13px; } }
 
 .header { background: #f0f2f5; color: #1a1a1a; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
 .header h1 { font-size: 20px; font-weight: 600; }
@@ -723,11 +774,20 @@ body.debug-enabled .lightbox-debug-panel { display: block; }
 .photo-card.checked { outline: 3px solid #2ecc71; outline-offset: -3px; }
 
 /* Settings page */
+.settings-layout { display: flex; gap: 24px; max-width: 1100px; margin: 0 auto; }
+.settings-sidebar { position: sticky; top: 80px; flex: 0 0 180px; align-self: flex-start; }
+.settings-sidebar nav { background: #fff; border-radius: 12px; padding: 12px 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.settings-sidebar a { display: block; padding: 8px 12px; font-size: 13px; color: #555; text-decoration: none;
+                      border-radius: 8px; margin-bottom: 2px; transition: all 0.15s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.settings-sidebar a:hover { background: #f0f2f5; color: #1a1a2e; }
+.settings-sidebar a.active { background: #4a6fa5; color: #fff; font-weight: 600; }
+.settings-main { flex: 1; min-width: 0; }
 .settings-page { max-width: 900px; margin: 0 auto; }
 .settings-group { background: #fff; border-radius: 12px; padding: 20px 24px; margin-bottom: 20px;
-                  box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+                  box-shadow: 0 2px 8px rgba(0,0,0,0.06); scroll-margin-top: 80px; }
 .settings-group h3 { font-size: 16px; font-weight: 600; margin-bottom: 4px; color: #1a1a2e; }
 .settings-group .group-desc { font-size: 13px; color: #666; margin-bottom: 16px; }
+@media (max-width: 860px) { .settings-sidebar { display: none; } .settings-layout { max-width: 900px; } }
 .setting-row { display: flex; align-items: center; padding: 10px 0; border-bottom: 1px solid #f0f2f5; gap: 16px; }
 .setting-row:last-child { border-bottom: none; }
 .setting-label { flex: 0 0 280px; }
@@ -757,6 +817,21 @@ body.debug-enabled .lightbox-debug-panel { display: block; }
 .auth-close { position: absolute; top: 12px; right: 16px; font-size: 28px; color: #999;
               text-decoration: none; line-height: 1; }
 .auth-close:hover { color: #333; }
+
+/* Unified modal styles */
+.modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                 background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center; }
+.modal-content { background: #fff; border-radius: 16px; padding: 0; width: 90%;
+                 box-shadow: 0 12px 48px rgba(0,0,0,0.25), 0 4px 16px rgba(0,0,0,0.15);
+                 position: relative; animation: modalIn 0.2s ease-out; }
+@keyframes modalIn { from { opacity: 0; transform: translateY(12px) scale(0.97); } to { opacity: 1; transform: none; } }
+.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 28px 0; }
+.modal-header h3 { margin: 0; font-size: 17px; font-weight: 600; color: #1a1a2e; }
+.modal-close { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+               background: #f0f2f5; border: none; border-radius: 8px; font-size: 20px; color: #666;
+               cursor: pointer; transition: all 0.15s; line-height: 1; flex-shrink: 0; }
+.modal-close:hover { background: #e0e0e0; color: #333; }
+.modal-body { padding: 16px 28px 24px; }
 .auth-modal h2 { font-size: 20px; margin-bottom: 8px; }
 .auth-modal .auth-hint { font-size: 14px; color: #666; margin-bottom: 20px; }
 .auth-modal input[type=password] { width: 100%; padding: 12px 16px; border: 2px solid #ddd; border-radius: 8px;
@@ -791,7 +866,7 @@ body.debug-enabled .lightbox-debug-panel { display: block; }
 .pagination-info { text-align: center; font-size: 13px; color: #888; margin-bottom: 8px; }
 
 /* Card size switcher */
-.view-switcher { display: flex; gap: 4px; margin-left: auto; }
+.view-switcher { display: flex; gap: 3px; background: rgba(255,255,255,0.06); border-radius: 8px; padding: 3px; }
 /* Toast notification */
 #toast { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
          background: #22313f; color: #fff; padding: 14px 28px; border-radius: 12px;
@@ -801,10 +876,11 @@ body.debug-enabled .lightbox-debug-panel { display: block; }
 #toast.toast-ok { background: #27ae60; }
 #toast.toast-err { background: #e74c3c; }
 #toast.show { opacity: 1; }
-.view-switcher button { background: rgba(255,255,255,0.1); border: none; color: rgba(255,255,255,0.6);
-                        padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; }
-.view-switcher button:hover { background: rgba(255,255,255,0.2); color: #fff; }
-.view-switcher button.active { background: rgba(255,255,255,0.2); color: #fff; }
+.view-switcher button { width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
+                        background: transparent; border: none; color: rgba(255,255,255,0.5);
+                        border-radius: 6px; cursor: pointer; font-size: 16px; transition: all 0.15s; }
+.view-switcher button:hover { background: rgba(255,255,255,0.15); color: #fff; }
+.view-switcher button.active { background: rgba(255,255,255,0.15); color: #fff; }
 .series-grid.view-large { grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); }
 .series-grid.view-large .series-thumb { height: 280px; }
 .series-grid.view-medium { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
@@ -829,8 +905,9 @@ function applyDebugMode() {
     document.body.classList.toggle('debug-enabled', enabled);
     var btn = document.getElementById('debug-toggle');
     if (btn) {
-        btn.classList.toggle('active', enabled);
-        btn.textContent = enabled ? 'Debug score: ON' : 'Debug score: OFF';
+        btn.classList.toggle('active-toggle', enabled);
+        btn.textContent = '\uD83D\uDD2C';
+        btn.setAttribute('data-tooltip', enabled ? 'Debug score: ON' : 'Debug score: OFF');
     }
 }
 function toggleDebugMode() {
@@ -1079,18 +1156,25 @@ function openReadme() {
 function closeReadme() {
     document.getElementById('readme-modal').style.display = 'none';
 }
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') closeReadme();
-});
+// (Escape handling for modals is unified in the cleanup section)
 
-// Monitor control
+// Monitor control — v3 navbar button
 function _setMonitorBtnState(active) {
-    var area = document.getElementById('monitor-btn-area');
-    if (!area) return;
+    var btn = document.getElementById('monitor-btn-area');
+    if (!btn) return;
+    // Clear existing children safely
+    while (btn.firstChild) btn.removeChild(btn.firstChild);
     if (active) {
-        area.innerHTML = '<button onclick="toggleMonitor(\'stop\')" style="background:#e74c3c; color:#fff; border:none; padding:8px 20px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer">\u041e\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c</button>';
+        btn.className = 'monitor-btn stop';
+        btn.setAttribute('onclick', "toggleMonitor('stop')");
+        var dot = document.createElement('span');
+        dot.className = 'pulse-dot';
+        btn.appendChild(dot);
+        btn.appendChild(document.createTextNode('\u041e\u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u044c'));
     } else {
-        area.innerHTML = '<button onclick="toggleMonitor(\'start\')" style="background:#2ecc71; color:#fff; border:none; padding:8px 20px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer">\u25b6 \u0417\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c</button>';
+        btn.className = 'monitor-btn start';
+        btn.setAttribute('onclick', "toggleMonitor('start')");
+        btn.appendChild(document.createTextNode('\u25b6 \u0417\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c'));
     }
 }
 
@@ -1192,6 +1276,15 @@ function openCleanup() {
 function closeCleanup() {
     document.getElementById('cleanup-modal').style.display = 'none';
 }
+// Escape closes any open modal
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        var modals = document.querySelectorAll('.modal-overlay');
+        for (var i = 0; i < modals.length; i++) {
+            if (modals[i].style.display === 'flex') modals[i].style.display = 'none';
+        }
+    }
+});
 function toggleCleanupAll(master) {
     var cbs = document.querySelectorAll('#cleanup-modal input[type=checkbox][name]');
     for (var i = 0; i < cbs.length; i++) cbs[i].checked = master.checked;
@@ -1275,18 +1368,22 @@ function updateDiskHealth() {
     fetch('/api/health', {credentials: 'same-origin'})
     .then(function(r) { return r.json().catch(function() { return {}; }); })
     .then(function(data) {
-        var el = document.getElementById('disk-indicator');
-        if (!el) return;
+        var iconEl = document.getElementById('disk-indicator-icon');
+        var textEl = document.getElementById('disk-indicator-text');
+        if (!iconEl || !textEl) return;
         var freeText = data.free_gb != null ? (data.free_gb + '\u00a0\u0413\u0411') : '...';
         if (data.status === 'critical') {
-            el.textContent = '\uD83D\uDD34 ' + freeText;
-            el.style.color = '#e74c3c';
+            iconEl.textContent = '\uD83D\uDD34';
+            textEl.textContent = freeText;
+            iconEl.parentElement.style.color = '#e74c3c';
         } else if (data.status === 'warning') {
-            el.textContent = '\u26A0 ' + freeText;
-            el.style.color = '#f39c12';
+            iconEl.textContent = '\u26A0';
+            textEl.textContent = freeText;
+            iconEl.parentElement.style.color = '#f39c12';
         } else {
-            el.textContent = '\uD83D\uDCBE ' + freeText;
-            el.style.color = '#aaa';
+            iconEl.textContent = '\uD83D\uDCBE';
+            textEl.textContent = freeText;
+            iconEl.parentElement.style.color = '';
         }
     }).catch(function() {});
 }
@@ -1308,44 +1405,43 @@ def _page(title: str, body: str, stats: str = "", active_nav: str = "series",
             '</div>'
         )
 
-    # Monitor status indicator
+    # Monitor state for navbar button
     mon = _MonitorState.status_dict()
-    if mon["active"]:
-        monitor_html = (
-            '<span style="margin-left:16px; font-size:13px; color:#2ecc71; font-weight:600">'
-            '&#9679; Мониторинг'
-            '</span>'
-        )
-    else:
-        monitor_html = ""
-
-    # Ambiguous series indicator
-    ambiguous_count = _count_ambiguous_series()
-    if ambiguous_count > 0:
-        monitor_html += (
-            f'<a href="/?filter=ambiguous" style="margin-left:12px; font-size:13px; '
-            f'color:#f39c12; font-weight:600; text-decoration:none">'
-            f'&#9888; {ambiguous_count} спорных'
-            f'</a>'
-        )
-
-    # Test mode / autoprint indicator
     _cfg = getattr(SeriesBrowserHandler, "config", None) or {}
     _print_cfg = _cfg.get("print", {})
     _debug_default = "true" if _cfg.get("output", {}).get("show_score_badge", True) else "false"
     _monitor_active = "true" if mon["active"] else "false"
     _monitor_series = int(mon.get("series_processed", 0))
     _monitor_last = json.dumps(mon.get("last_activity", ""), ensure_ascii=False)
-    if _print_cfg.get("test_mode", False):
-        monitor_html += (
-            '<span style="margin-left:12px; font-size:13px; color:#f1c40f; '
-            'font-weight:700; background:#333; padding:2px 8px; border-radius:6px">'
-            'TEST MODE</span>'
+
+    # Monitor button in navbar (always visible on all pages)
+    if mon["active"]:
+        monitor_btn_html = (
+            '<button id="monitor-btn-area" class="monitor-btn stop" onclick="toggleMonitor(\'stop\')">'
+            '<span class="pulse-dot"></span>'
+            f'Серий: {_monitor_series} \u00b7 Остановить'
+            '</button>'
         )
-    elif _print_cfg.get("autoprint", False):
-        monitor_html += (
-            '<span style="margin-left:12px; font-size:13px; color:#2ecc71; font-weight:600">'
-            '&#9113; Автопечать</span>'
+    else:
+        monitor_btn_html = (
+            '<button id="monitor-btn-area" class="monitor-btn start" onclick="toggleMonitor(\'start\')">'
+            '&#9654; Запустить'
+            '</button>'
+        )
+
+    # Stats badge (only on series pages)
+    stats_html = ""
+    if stats:
+        stats_html = f'<span class="stats-badge">{stats}</span>'
+
+    # Ambiguous indicator for stats
+    ambiguous_count = _count_ambiguous_series()
+    if ambiguous_count > 0:
+        stats_html += (
+            f'<a href="/?filter=ambiguous" style="font-size:13px; '
+            f'color:#f39c12; font-weight:600; text-decoration:none; white-space:nowrap">'
+            f'&#9888; {ambiguous_count}'
+            f'</a>'
         )
 
     return (
@@ -1356,32 +1452,37 @@ def _page(title: str, body: str, stats: str = "", active_nav: str = "series",
         f'<style>{_CSS}</style>\n'
         '</head><body>\n'
         '<nav class="navbar">\n'
-        '  <a href="/" class="brand">&#127935; Kanatka</a>\n'
-        '  <div class="nav-links">\n'
+        '  <a href="/" class="brand"><span>&#127935;</span> Kanatka</a>\n'
+        '  <div class="page-switcher">\n'
         f'    <a href="/" class="{nav_cls("series")}">Серии</a>\n'
-        f'    <a href="/sheets" class="{nav_cls("sheets")}">&#128196; Листы</a>\n'
-        f'    <a href="/settings" class="{nav_cls("settings")}">&#9881; Настройки</a>\n'
-        '    <button class="nav-btn" onclick="refreshPage(); return false;">Обновить</button>\n'
-        '    <button class="nav-btn" onclick="openZipModal(); return false;">&#128190; Архив</button>\n'
-        '    <button id="debug-toggle" class="nav-btn" onclick="toggleDebugMode(); return false;">Debug</button>\n'
-        '    <button class="nav-btn" onclick="openCleanup(); return false;" '
-        'style="color:#ff7675; border-color:rgba(255,118,117,0.35)">&#128465; Очистка</button>\n'
-        '    <button class="nav-btn" onclick="openReadme(); return false;" '
-        'style="background:#e74c3c; color:#fff; border-color:#c0392b; font-weight:700">&#128214; Инструкция</button>\n'
+        f'    <a href="/sheets" class="{nav_cls("sheets")}">Листы</a>\n'
         '  </div>\n'
-        f'  {view_switcher_html}'
+        '  <div class="nav-divider"></div>\n'
+        '  <div class="action-buttons">\n'
+        '    <button class="action-btn" data-tooltip="Обновить" onclick="refreshPage(); return false;">&#x21BB;</button>\n'
+        '    <button class="action-btn" data-tooltip="Архив (ZIP)" onclick="openZipModal(); return false;">&#x1F4E6;</button>\n'
+        '    <button id="debug-toggle" class="action-btn" data-tooltip="Debug score" onclick="toggleDebugMode(); return false;">&#x1F50D;</button>\n'
+        '    <button class="action-btn danger" data-tooltip="Очистка" onclick="openCleanup(); return false;">&#x2716;</button>\n'
+        '    <button class="action-btn" data-tooltip="Инструкция" onclick="openReadme(); return false;">&#x2753;</button>\n'
+        '  </div>\n'
+        '  <div class="nav-divider"></div>\n'
+        f'  {monitor_btn_html}\n'
+        '  <div class="nav-spacer"></div>\n'
         '  <div class="nav-right">\n'
-        '    <span id="disk-indicator" style="font-size:13px; font-weight:600; color:#aaa; white-space:nowrap">'
-        '\U0001F4BE ...</span>\n'
-        f'    {monitor_html}'
-        + (f'    <span style="opacity:0.4">|</span><span>{stats}</span>\n' if stats else '')
-        + '  </div>\n'
+        f'    {view_switcher_html}\n'
+        '    <div class="disk-indicator">'
+        '<span class="icon" id="disk-indicator-icon">&#128190;</span>'
+        '<span class="disk-text" id="disk-indicator-text">...</span></div>\n'
+        f'    {stats_html}\n'
+        f'    <a href="/settings" class="settings-btn" title="Настройки">&#9881;</a>\n'
+        '  </div>\n'
         '</nav>\n'
         f'<div class="container">{body}</div>\n'
-        '<div id="cleanup-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%;'
-        ' background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center">'
-        '<div style="background:#fff; border-radius:16px; padding:28px 32px; max-width:420px; width:90%">'
-        '<h3 style="margin-top:0">&#128465; Очистка рабочих папок</h3>'
+        '<div id="cleanup-modal" class="modal-overlay" onclick="if(event.target===this)closeCleanup()">'
+        '<div class="modal-content" style="max-width:420px">'
+        '<div class="modal-header"><h3>Очистка рабочих папок</h3>'
+        '<button class="modal-close" onclick="closeCleanup()">&times;</button></div>'
+        '<div class="modal-body">'
         '<p style="color:#666; font-size:13px; margin-bottom:16px">Выберите папки для очистки. Файлы будут удалены безвозвратно. '
         'Карточки на вкладке «Серии» строятся по отчётам из logs, поэтому без последнего пункта история серий останется видимой.</p>'
         '<div style="display:flex; flex-direction:column; gap:10px">'
@@ -1399,12 +1500,13 @@ def _page(title: str, body: str, stats: str = "", active_nav: str = "series",
         '<div style="display:flex; gap:12px; margin-top:20px; justify-content:flex-end">'
         '<button onclick="closeCleanup()" style="padding:8px 20px; border:1px solid #ddd; border-radius:8px; background:#fff; cursor:pointer">Отмена</button>'
         '<button onclick="runCleanup()" style="padding:8px 20px; border:none; border-radius:8px; background:#e74c3c; color:#fff; cursor:pointer; font-weight:600">Удалить</button>'
-        '</div></div></div>\n'
+        '</div></div></div></div>\n'
         '<div id="toast" role="status" aria-live="polite"></div>\n'
-        '<div id="zip-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%;'
-        ' background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center">'
-        '<div style="background:#fff; border-radius:16px; padding:28px 32px; max-width:400px; width:90%">'
-        '<h3 style="margin-top:0">&#128190; Архив ZIP</h3>'
+        '<div id="zip-modal" class="modal-overlay" onclick="if(event.target===this)closeZipModal()">'
+        '<div class="modal-content" style="max-width:400px">'
+        '<div class="modal-header"><h3>Архив ZIP</h3>'
+        '<button class="modal-close" onclick="closeZipModal()">&times;</button></div>'
+        '<div class="modal-body">'
         '<p style="color:#666; font-size:13px; margin-bottom:16px">ZIP с лучшими фото и листами будет сохранён на Рабочий стол.</p>'
         '<div style="display:flex; flex-direction:column; gap:10px; margin-bottom:16px">'
         '<label style="cursor:pointer"><input type="radio" name="zip-preset" value="all" checked onchange="toggleZipCustom()"> Всё</label>'
@@ -1419,19 +1521,16 @@ def _page(title: str, body: str, stats: str = "", active_nav: str = "series",
         '<div style="display:flex; gap:12px; justify-content:flex-end">'
         '<button onclick="closeZipModal()" style="padding:8px 20px; border:1px solid #ddd; border-radius:8px; background:#fff; cursor:pointer">Отмена</button>'
         '<button id="zip-run-btn" onclick="runZipExport()" style="padding:8px 20px; border:none; border-radius:8px; background:#3498db; color:#fff; cursor:pointer; font-weight:600">Создать ZIP</button>'
-        '</div></div></div>\n'
-        '<div id="readme-modal" onclick="if(event.target===this)closeReadme()" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%;'
-        ' background:rgba(0,0,0,0.6); z-index:9999; align-items:center; justify-content:center">'
-        '<div style="background:#fff; border-radius:16px; padding:28px 32px; max-width:720px; width:94%;'
-        ' max-height:82vh; display:flex; flex-direction:column">'
-        '<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; flex-shrink:0">'
-        '<h2 style="margin:0; color:#1a1a2e">&#128214; Инструкция</h2>'
-        '<button onclick="closeReadme()" style="font-size:22px; background:none; border:none; cursor:pointer; color:#666; line-height:1">&times;</button>'
-        '</div>'
-        '<div id="readme-content" style="overflow-y:auto; flex:1; font-size:14px; line-height:1.6; color:#333">'
+        '</div></div></div></div>\n'
+        '<div id="readme-modal" class="modal-overlay" onclick="if(event.target===this)closeReadme()">'
+        '<div class="modal-content" style="max-width:720px; max-height:82vh; display:flex; flex-direction:column">'
+        '<div class="modal-header"><h3>Инструкция</h3>'
+        '<button class="modal-close" onclick="closeReadme()">&times;</button></div>'
+        '<div class="modal-body" style="overflow-y:auto; flex:1; padding-bottom:0">'
+        '<div id="readme-content" style="font-size:14px; line-height:1.6; color:#333">'
         '<p style="color:#aaa">Загрузка...</p>'
-        '</div>'
-        '<div style="margin-top:16px; flex-shrink:0; text-align:right">'
+        '</div></div>'
+        '<div style="padding:16px 28px; flex-shrink:0; text-align:right">'
         '<button onclick="closeReadme()" style="padding:8px 24px; border:none; border-radius:8px; background:#1a1a2e; color:#fff; cursor:pointer; font-weight:600">Закрыть</button>'
         '</div></div></div>\n'
         '<div id="fullscreen" class="fullscreen-overlay" onclick="closeLightbox(event)">'
@@ -1626,36 +1725,8 @@ def _render_series_list(all_series: list[dict], config: dict, page: int = 1, fil
         parts.append('</div>')
         pagination = "\n".join(parts)
 
-    # Monitor control bar
-    mon = _MonitorState.status_dict()
-    if mon["active"]:
-        monitor_bar = (
-            '<div style="background:#e8f5e9; border-radius:12px; padding:16px 20px; margin-bottom:16px; '
-            'display:flex; align-items:center; justify-content:space-between; border:1px solid #a5d6a7">'
-            '<div>'
-            '<span style="color:#2e7d32; font-weight:700; font-size:15px">&#9679; Мониторинг активен</span>'
-            f'<span style="color:#666; font-size:13px; margin-left:12px">Обработано серий: {mon["series_processed"]}</span>'
-            + (f'<span style="color:#888; font-size:13px; margin-left:12px">Последнее: {mon["last_activity"]}</span>'
-               if mon["last_activity"] else "")
-            + '</div>'
-            '<div id="monitor-btn-area"><button onclick="toggleMonitor(\'stop\')" style="background:#e74c3c; color:#fff; border:none; '
-            'padding:8px 20px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer">Остановить</button></div>'
-            '</div>'
-        )
-    else:
-        err_html = (f'<span style="color:#e74c3c; font-size:13px; margin-left:12px">{mon["error"]}</span>'
-                    if mon["error"] else "")
-        monitor_bar = (
-            '<div style="background:#fff; border-radius:12px; padding:16px 20px; margin-bottom:16px; '
-            'display:flex; align-items:center; justify-content:space-between; box-shadow:0 2px 8px rgba(0,0,0,0.06)">'
-            '<div>'
-            '<span style="color:#666; font-size:14px">&#128247; Автономный режим: мониторинг входящих фото</span>'
-            + err_html
-            + '</div>'
-            '<div id="monitor-btn-area"><button onclick="toggleMonitor(\'start\')" style="background:#2ecc71; color:#fff; border:none; '
-            'padding:8px 20px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer">&#9654; Запустить</button></div>'
-            '</div>'
-        )
+    # Monitor bar removed in v3 — control is now in navbar
+    monitor_bar = ""
 
     empty_state = ""
     if not cards:
@@ -2332,7 +2403,10 @@ function printSheet(name) {
 def _render_settings(config: dict) -> str:
     """Render the engineer settings page with all tunable parameters."""
     groups = []
-    for group_title, group_desc, settings in _SETTINGS_SCHEMA:
+    sidebar_links = []
+    for idx, (group_title, group_desc, settings) in enumerate(_SETTINGS_SCHEMA):
+        section_id = f"section-{idx}"
+        sidebar_links.append(f'<a href="#{section_id}" onclick="highlightSidebarLink(this)">{group_title}</a>')
         rows = []
         for section, key, label, hint, input_type, extra in settings:
             current = config.get(section, {}).get(key, "")
@@ -2387,7 +2461,7 @@ def _render_settings(config: dict) -> str:
             )
 
         groups.append(
-            '<div class="settings-group">'
+            f'<div class="settings-group" id="{section_id}">'
             f'<h3>{group_title}</h3>'
             f'<div class="group-desc">{group_desc}</div>'
             + "".join(rows)
@@ -2469,20 +2543,54 @@ if (window.location.hash === '#change-password') {
 }
 """
 
+    sidebar_links.append('<a href="#change-password" onclick="highlightSidebarLink(this)">Пароль</a>')
+    sidebar_html = (
+        '<aside class="settings-sidebar"><nav>'
+        + "".join(sidebar_links)
+        + '</nav></aside>'
+    )
+
+    sidebar_js = r"""
+function highlightSidebarLink(el) {
+    var links = document.querySelectorAll('.settings-sidebar a');
+    for (var i = 0; i < links.length; i++) links[i].classList.remove('active');
+    el.classList.add('active');
+}
+(function() {
+    var groups = document.querySelectorAll('.settings-group, .change-pw-section');
+    var links = document.querySelectorAll('.settings-sidebar a');
+    if (!groups.length || !links.length) return;
+    var observer = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+            if (entry.isIntersecting) {
+                var id = entry.target.id;
+                for (var i = 0; i < links.length; i++) {
+                    links[i].classList.toggle('active', links[i].getAttribute('href') === '#' + id);
+                }
+            }
+        });
+    }, { rootMargin: '-80px 0px -60% 0px', threshold: 0 });
+    for (var i = 0; i < groups.length; i++) observer.observe(groups[i]);
+})();
+"""
+
     body = (
         '<div class="settings-page">'
         '<h2 style="margin-bottom:8px">Настройки инженера ' + logout_btn + '</h2>'
         + first_login_banner +
         '<p style="color:#666; margin-bottom:20px; font-size:14px">'
         'Параметры для полевой настройки программы. Изменения сохраняются в config.json.</p>'
+        '<div class="settings-layout">'
+        + sidebar_html
+        + '<div class="settings-main">'
         + "".join(groups)
         + '<div class="save-bar">'
         '<span id="save-msg" class="save-msg"></span>'
         '<button onclick="saveSettings()">Сохранить настройки</button>'
         '</div>'
         + change_pw_html
-        + '</div>'
-        f'<script>{save_js}\n{scroll_js}</script>'
+        + '</div></div></div>'
+        f'<script>{save_js}\n{scroll_js}\n{sidebar_js}</script>'
     )
     return _page("Kanatka — Настройки", body, active_nav="settings")
 

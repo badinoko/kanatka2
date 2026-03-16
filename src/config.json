@@ -65,7 +65,7 @@
   },
   "print": {
     "autoprint": false,
-    "test_mode": true,
+    "test_mode": false,
     "printer_name": ""
   },
   "network": {
