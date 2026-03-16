@@ -38,7 +38,7 @@ def main() -> int:
 
     config = load_config(args.config)
     ensure_runtime_directories(config)
-    logger = build_logger(config["paths"]["log_dir"])
+    logger = build_logger(config["paths"]["log_dir"], log_to_file=config.get("logging", {}).get("log_to_file", True))
 
     if args.command == "app":
         launch_app(args.config)

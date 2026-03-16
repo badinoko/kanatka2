@@ -47,28 +47,21 @@
   - настройки инженера уже есть;
   - nearby/rescue уже есть;
   - мониторинг INBOX уже есть.
-- Для customer smoke-testing уже собран installer:
-  - `installers/PhotoSelector_Setup_v2.exe`
-  - в поставке есть `INBOX`, `simulate_camera.bat`, `process_folder.bat` и актуальный `README.md`.
+- Отгружен финальный installer v2.0:
+  - `installers/PhotoSelector_Setup_v2.exe` (пересобран 2026-03-16 со всеми фиксами)
+  - в поставке: `INBOX`, `simulate_camera.bat`, `process_folder.bat`, `README.md`.
+  - Заказчик тестирует на своих 270 фото.
 - `receiver/` — legacy-код, не часть продукта.
+- Все задачи KAN-040, 062, 068, 069 — DONE. Мониторинг, ZIP, disk indicator, log toggle, обратная сортировка, фикс нумерации серий при перезапуске.
 - Главный технический риск:
-  - code/docs/settings легко расходятся между собой;
-  - grouping серии критичен и должен опираться именно на время создания файла;
-  - `delta_score` и manual review должны оставаться доступными для полевой калибровки.
-- По raw feedback автора на decision-note уже подтверждено:
-  - operator queue = variant B;
-  - `delta_score` должен настраиваться;
-  - спорные серии полностью выходят из workflow до решения по ним и не тормозят остальные листы;
-  - cleanup = variant C, scheduled subprocess worker.
+  - Score-модель требует калибровки на реальных данных заказчика;
+  - grouping серии критичен и должен опираться именно на время создания файла.
 
 ## Immediate Priorities
 
-- KAN-058: подтвердить на данных заказчика creation-time grouping и окно 2 секунды.
-- KAN-059: подтвердить UX/pонятность `delta_score` и manual review в настройках инженера.
-- KAN-060: довести user-facing guides после ручной проверки.
-- KAN-050: привести продукт к реальному workflow заказчика.
-- KAN-067: прогнать customer smoke-test через новый installer v2 и `INBOX.zip`.
-- KAN-040: спроектировать retention/cleanup и health-check.
+- **KAN-050**: прогнать реальный датасет заказчика, собрать замечания, откалибровать дефолты score и series grouping.
+- Собрать feedback от заказчика по v2.0 тест-пачке.
+- KAN-033 (BACKLOG): deployment guide для инженера — позже.
 
 ## Execution Brief For New Chat
 
@@ -89,13 +82,12 @@
    - спорные серии должны полностью выходить из текущего workflow и не тормозить остальные листы;
    - cleanup подтверждён как scheduled subprocess worker;
    - `installers/` больше не игнорируется;
-   - актуальный артефакт для заказчика сейчас: `installers/PhotoSelector_Setup_v2.exe`.
+   - актуальный артефакт для заказчика: `installers/PhotoSelector_Setup_v2.exe` (собран 2026-03-16);
+   - следующий milestone — feedback от заказчика по его тест-пачке и калибровка score.
 3. Выполнять задачи в таком порядке:
-   - KAN-058: creation-time grouping;
-   - KAN-059: `delta_score` и явные настройки manual review;
-   - KAN-060: чистка docs и подсказок по UI;
-   - KAN-050: приведение к реальному workflow заказчика;
-   - KAN-040: cleanup/retention и health-check.
+   - KAN-050: полевой validation-run и калибровка score;
+   - KAN-040: проверить disk warning в реальной установке;
+   - KAN-062: проверить ZIP в web-UI, зафиксировать политику хранения оригиналов.
 4. Кодовый фокус первой волны:
    - `src/scorer.py`
    - `src/analyzer.py`

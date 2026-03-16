@@ -38,13 +38,15 @@ def create_results_zip(
 
     all_files: list[tuple[str, Path]] = []
 
-    for jpg in selected_dir.glob("*.jpg"):
-        if _matches_date_filter(jpg, date_from, date_to):
-            all_files.append((f"selected/{jpg.name}", jpg))
+    for pattern in ("*.jpg", "*.jpeg", "*.png"):
+        for f in selected_dir.glob(pattern):
+            if _matches_date_filter(f, date_from, date_to):
+                all_files.append((f"selected/{f.name}", f))
 
-    for jpg in sheets_dir.glob("*.jpg"):
-        if _matches_date_filter(jpg, date_from, date_to):
-            all_files.append((f"sheets/{jpg.name}", jpg))
+    for pattern in ("*.jpg", "*.jpeg", "*.png"):
+        for f in sheets_dir.glob(pattern):
+            if _matches_date_filter(f, date_from, date_to):
+                all_files.append((f"sheets/{f.name}", f))
 
     if not all_files:
         raise ValueError("Нет файлов для упаковки. Сначала обработайте фото.")

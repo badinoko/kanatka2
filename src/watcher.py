@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,6 +14,35 @@ from image_utils import get_file_creation_time, list_jpeg_files
 from print_utils import print_sheet
 from selector import process_series
 from sheet_composer import compose_pending_sheets
+
+
+def check_disk_space(config: dict) -> dict:
+    """Return available disk space status for the workdir partition.
+
+    Returns a dict with keys:
+        free_gb : float | None — gigabytes free, or None if check failed
+        status  : "ok" | "warning" | "critical"
+    """
+    check_path = Path(config["paths"]["output_selected"])
+    probe = check_path if check_path.exists() else check_path.parent
+    try:
+        usage = shutil.disk_usage(probe)
+    except OSError:
+        return {"free_gb": None, "status": "ok"}
+
+    free_gb = round(usage.free / (1024 ** 3), 2)
+    health = config.get("health", {})
+    critical_threshold = float(health.get("critical_free_gb", 0.2))
+    warning_threshold = float(health.get("min_free_gb", 1.0))
+
+    if free_gb < critical_threshold:
+        status = "critical"
+    elif free_gb < warning_threshold:
+        status = "warning"
+    else:
+        status = "ok"
+
+    return {"free_gb": free_gb, "status": status}
 
 
 def group_files_by_time(file_paths: list[Path], max_gap_seconds: float) -> list[list[Path]]:
@@ -83,6 +113,24 @@ def process_folder(
             )
     finally:
         analyzer.close()
+
+    disk = check_disk_space(config)
+    if disk["status"] == "critical":
+        logger.error(
+            "Критически мало места на диске: %.2f ГБ. Сборка листов пропущена.",
+            disk["free_gb"],
+        )
+        return {
+            "series_total": len(groups),
+            "selected_total": sum(r["status"] == "selected" for r in results),
+            "ambiguous_total": sum(r["status"] == "ambiguous_manual_review" for r in results),
+            "discarded_total": sum(r["status"] == "discarded_empty" for r in results),
+            "sheets_total": 0,
+            "results": results,
+            "error": "disk_critical",
+        }
+    if disk["status"] == "warning":
+        logger.warning("Мало места на диске: %.2f ГБ.", disk["free_gb"])
 
     generated_sheets = compose_pending_sheets(config, logger, allow_partial=False)
 

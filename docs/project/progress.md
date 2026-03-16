@@ -1,5 +1,40 @@
 # Progress
 
+## 2026-03-16 (сессия 2)
+
+**Контекст:** продолжение после выпуска v2. Пользователь сообщил, что серии и листы не появляются в UI несмотря на работающий симулятор.
+
+**Диагностика и фиксы:**
+
+1. **Мониторинг не захватывал уже существующие файлы** — watchdog генерирует события только для новых файлов. Файлы в `incoming/`, которые существовали до нажатия «Старт», игнорировались. Исправлено: после `observer.start()` сканируем `incoming/` и добавляем все найденные файлы в `PendingQueue`.
+
+2. **Cooldown блокировал обработку** — `cooldown_seconds=8` при интервалах симулятора 3–4с означало, что очередь никогда не сбрасывалась пока симулятор работал. Снижен дефолт до 3с в `config.json`.
+
+3. **Краш треда мониторинга на cleanup** — если cleanup удалял файлы из очереди, `process_series()` бросал `FileNotFoundError`, один `try/except` вокруг всего цикла убивал тред. Кнопка «Стоп» получала "failed to fetch". Исправлено: per-series `try/except` с `logger.warning`, тред продолжает работу.
+
+4. **Суррогатная пара в Python-строке** — `'\uD83D\uDCBE'` (JS-стиль) вызывал `UnicodeEncodeError: surrogates not allowed` при UTF-8 кодировании HTTP-ответа → сервер падал с ERR_EMPTY_RESPONSE. Исправлено: заменено на `'\U0001F4BE'` (полный кодпоинт).
+
+5. **glob("*.jpg") пропускал PNG** — в двух местах (`_render_series_detail`, `_render_nearby`) исправлено на `iterdir()` + `suffix.lower() in {".jpg", ".jpeg", ".png"}`.
+
+**UX-переработка навбара (по запросу пользователя):**
+- Кнопка «Очистка» переделана в `nav-btn` вместо опасного красного div.
+- Переключатель размера карточек сдвинут вправо через `margin-left: auto`.
+- Индикатор дискового пространства перенесён в `nav-right`, всегда виден.
+- TEST MODE индикатор и статус мониторинга — в `nav-right`.
+- Тост-уведомления (`showToast()`) для: cleanup, ZIP-экспорт, ошибки мониторинга — вместо `alert()` и синхронных `reload()`.
+- Пустое состояние: упоминает счётчик «История» когда серий с живыми файлами нет.
+
+**KAN-040 и KAN-062 подтверждены пользователем как рабочие** → статус DONE.
+
+**Также в той же сессии завершено:**
+- KAN-069: `load_all_series()` reverse=True — новые серии сверху.
+- KAN-068: `log_to_file` в config.json + toggle в settings page + `build_logger(log_to_file=)` во всех точках вызова.
+- **Критический баг нумерации серий**: `series_idx` при каждом перезапуске мониторинга начинался с 1, перезаписывал старые отчёты SER001–N. Новые серии из-за этого появлялись ниже последней старой (reverse sort не помогал, пока новых не накопится больше). Исправлено: при старте мониторинга сканируем `logs/ser*_report.json`, продолжаем с `max_idx + 1`.
+- README переписан полностью: таблица navbar, все страницы, скоринг, настройки, структура (58 тестов).
+- Sheets page: `alert()` → `showToast()` в кнопке ручной печати.
+
+**Итог сессии:** все подтверждённые фиксы реализованы, 58 тестов зелёные. Installer v2.0 пересобран и отгружен заказчику. Тег v2.0 пересоздан на актуальном коммите.
+
 ## 2026-03-14
 
 - Введен новый docs-bundle проекта: `CODEX.md`, `AGENTS.md`, `docs/project/overview.md`, `docs/project/startup.md`, `docs/project/progress.md`.
@@ -815,3 +850,29 @@
   - ZIP-архивирование с фильтром по датам не потеряно, но сейчас явно живёт в legacy `tkinter` launcher, а не в основном end-user окне.
 - Следующий содержательный шаг после релиза v2.0:
   - пользователь собирает замечания по реальному датасету и возвращается с паттернами для калибровки score.
+
+## 2026-03-16 (KAN-062 + KAN-040 — ZIP в web UI и low-disk warning, подготовка к v3.0)
+
+- **KAN-062: ZIP-экспорт добавлен в основной веб-интерфейс.**
+  - В `src/series_browser.py` добавлены: кнопка «💾 Архив» в navbar, модал с пресетами (Всё / Сегодня / Эта неделя / Свой диапазон), маршрут `POST /api/export-zip`, метод `_handle_export_zip()`.
+  - В `src/export_utils.py` исправлен glob: раньше только `*.jpg`, теперь `*.jpg`, `*.jpeg`, `*.png` — PNG-файлы в selected/ и sheets/ тоже попадают в ZIP.
+  - Добавлен тест `test_includes_png_files` в `tests/test_export_utils.py`.
+  - Добавлены тесты на navbar Archive button и ZIP modal в `tests/test_series_browser.py`.
+
+- **KAN-040: Low-disk warning и fail mode.**
+  - В `src/config.json` добавлена секция `health` с дефолтами `min_free_gb: 1.0`, `critical_free_gb: 0.2`.
+  - В `src/watcher.py` добавлена функция `check_disk_space(config) -> dict` (`shutil.disk_usage`).
+  - В `process_folder()` добавлена проверка перед `compose_pending_sheets()`: critical → ранний выход с `"error": "disk_critical"`, warning → logwarning, continue.
+  - В `src/series_browser.py` добавлен маршрут `GET /api/health` (возвращает disk status).
+  - В navbar добавлен `<span id="disk-indicator">` (скрыт по умолчанию); JS polling каждые 30 сек: warning → жёлтый, critical → красный.
+  - В `_handle_monitor()` action=start: блокировка если disk critical.
+  - В настройки инженера добавлена секция «Мониторинг диска» с полями `min_free_gb` и `critical_free_gb`.
+  - Добавлены 3 теста `CheckDiskSpaceTests` в `tests/test_watcher_grouping.py`.
+
+- **Docs обновлены:**
+  - `docs/project/overview.md`: KAN-040 и KAN-062 → REVIEW; KAN-047, KAN-048 → DONE; Current Priorities/Problems актуализированы.
+  - `docs/project/startup.md`: Immediate Priorities обновлены; v3.0 упомянут как следующий milestone.
+  - `docs/project/roadmap.md`: Этапы 1–4 → ✅ DONE (v2.0); Этап 5 → активен; добавлен раздел `## v3.0 — следующий milestone`.
+
+- **Итого:** 58 тестов, все проходят (было 52; добавлено 6 новых).
+- **Статус:** KAN-062 и KAN-040 реализованы; требуют пользовательской проверки в реальной установке перед сборкой `PhotoSelector_Setup_v3.exe`.

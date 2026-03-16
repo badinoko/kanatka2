@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 
 
-def build_logger(log_dir: str | Path) -> logging.Logger:
+def build_logger(log_dir: str | Path, log_to_file: bool = True) -> logging.Logger:
     log_directory = Path(log_dir)
     log_directory.mkdir(parents=True, exist_ok=True)
     log_path = log_directory / "photo_selector.log"
@@ -21,12 +21,12 @@ def build_logger(log_dir: str | Path) -> logging.Logger:
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    file_handler = logging.FileHandler(log_path, encoding="utf-8")
-    file_handler.setFormatter(formatter)
+    if log_to_file:
+        file_handler = logging.FileHandler(log_path, encoding="utf-8")
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
 
     stream_handler = logging.StreamHandler()
     stream_handler.setFormatter(formatter)
-
-    logger.addHandler(file_handler)
     logger.addHandler(stream_handler)
     return logger

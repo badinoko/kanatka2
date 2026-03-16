@@ -48,6 +48,34 @@ class CreateResultsZipTests(unittest.TestCase):
             finally:
                 Path.home = original_home
 
+    def test_includes_png_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            selected = Path(tmp) / "selected"
+            sheets = Path(tmp) / "sheets"
+            selected.mkdir()
+            sheets.mkdir()
+            (selected / "photo1.png").write_bytes(b"png1")
+            (sheets / "sheet1.png").write_bytes(b"sheet_png")
+
+            config = {
+                "paths": {
+                    "output_selected": str(selected),
+                    "output_sheets": str(sheets),
+                }
+            }
+
+            original_home = Path.home
+            Path.home = staticmethod(lambda: Path(tmp))
+            try:
+                (Path(tmp) / "Desktop").mkdir(exist_ok=True)
+                result = create_results_zip(config)
+                with zipfile.ZipFile(result) as zf:
+                    names = zf.namelist()
+                    self.assertIn("selected/photo1.png", names)
+                    self.assertIn("sheets/sheet1.png", names)
+            finally:
+                Path.home = original_home
+
     def test_raises_on_empty(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             selected = Path(tmp) / "selected"

@@ -36,7 +36,7 @@ class PhotoSelectorGUI:
     def __init__(self, config_path: str | None = None) -> None:
         self.config = load_config(config_path)
         ensure_runtime_directories(self.config)
-        self.logger = build_logger(self.config["paths"]["log_dir"])
+        self.logger = build_logger(self.config["paths"]["log_dir"], log_to_file=self.config.get("logging", {}).get("log_to_file", True))
         self._browser_thread: threading.Thread | None = None
 
         self.root = tk.Tk()

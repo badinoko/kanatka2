@@ -29,7 +29,7 @@ def launch_app(config_path: str | None = None) -> None:
 
     config = load_config(config_path)
     ensure_runtime_directories(config)
-    logger = build_logger(config["paths"]["log_dir"])
+    logger = build_logger(config["paths"]["log_dir"], log_to_file=config.get("logging", {}).get("log_to_file", True))
 
     server_thread = start_server(config, port=PORT)
     logger.info("HTTP-сервер запущен на http://127.0.0.1:%s", PORT)

@@ -89,7 +89,7 @@ def _start_monitoring(config: dict) -> None:
     _MonitorState.last_activity = ""
 
     def monitor_loop() -> None:
-        logger = build_logger(config["paths"]["log_dir"])
+        logger = build_logger(config["paths"]["log_dir"], log_to_file=config.get("logging", {}).get("log_to_file", True))
         logger.info("Автономный режим: мониторинг %s", incoming_dir)
         observer = None
         analyzer = None
@@ -100,6 +100,10 @@ def _start_monitoring(config: dict) -> None:
             observer.schedule(IncomingFolderHandler(pending), str(incoming_dir), recursive=False)
             observer.start()
             _MonitorState.observer = observer
+            # Pre-populate queue with files already in incoming/ before monitoring started
+            for _pattern in ("*.jpg", "*.jpeg", "*.png"):
+                for _f in incoming_dir.glob(_pattern):
+                    pending.add(_f)
         except Exception as exc:
             logger.exception("Ошибка запуска мониторинга: %s", exc)
             _MonitorState.error = f"Мониторинг не запущен: {exc}"
@@ -117,7 +121,16 @@ def _start_monitoring(config: dict) -> None:
                     pass
             return
 
-        series_idx = 1
+        # Continue numbering from the highest existing series in logs/ to avoid
+        # overwriting old reports and corrupting the reverse-chronological sort.
+        import re as _re
+        _log_dir = Path(config["paths"]["log_dir"])
+        _max_idx = 0
+        for _rp in _log_dir.glob("ser*_report.json"):
+            _m = _re.match(r"ser(\d+)_report", _rp.stem)
+            if _m:
+                _max_idx = max(_max_idx, int(_m.group(1)))
+        series_idx = _max_idx + 1
         try:
             while _MonitorState.running:
                 ready = pending.flush_ready(config["series_detection"]["cooldown_seconds"])
@@ -126,11 +139,14 @@ def _start_monitoring(config: dict) -> None:
                     for group in grouped:
                         if not _MonitorState.running:
                             break
-                        process_series(
-                            group, series_idx, analyzer, config, logger,
-                            remove_source_files=False, save_annotations=True,
-                        )
-                        compose_pending_sheets(config, logger)
+                        try:
+                            process_series(
+                                group, series_idx, analyzer, config, logger,
+                                remove_source_files=False, save_annotations=True,
+                            )
+                            compose_pending_sheets(config, logger)
+                        except Exception as _series_exc:
+                            logger.warning("Серия %d пропущена из-за ошибки: %s", series_idx, _series_exc)
                         _MonitorState.series_count += 1
                         _MonitorState.last_activity = time.strftime("%H:%M:%S")
                         # Invalidate series cache
@@ -193,7 +209,7 @@ def _check_auth_cookie(cookie_header: str | None) -> bool:
 def load_all_series(log_dir: Path) -> list[dict]:
     """Read all ser*_report.json files and return sorted list of series."""
     series: list[dict] = []
-    for report_path in sorted(log_dir.glob("ser*_report.json")):
+    for report_path in sorted(log_dir.glob("ser*_report.json"), reverse=True):
         try:
             data = json.loads(report_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
@@ -519,7 +535,7 @@ body { font-family: -apple-system, 'Segoe UI', Arial, sans-serif; background: #f
                                font-size: 13px; font-weight: 600; transition: all 0.15s; }
 .navbar .nav-links .nav-btn:hover { color: #fff; background: rgba(255,255,255,0.16); }
 .navbar .nav-links .nav-btn.active { background: #f1c40f; color: #1a1a2e; border-color: #f1c40f; }
-.navbar .nav-right { margin-left: auto; font-size: 13px; opacity: 0.7; }
+.navbar .nav-right { font-size: 13px; opacity: 0.85; display: flex; align-items: center; gap: 10px; margin-left: 12px; }
 
 .header { background: #f0f2f5; color: #1a1a1a; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
 .header h1 { font-size: 20px; font-weight: 600; }
@@ -693,7 +709,15 @@ body.debug-enabled .lightbox-debug-panel { display: block; }
 .pagination-info { text-align: center; font-size: 13px; color: #888; margin-bottom: 8px; }
 
 /* Card size switcher */
-.view-switcher { display: flex; gap: 4px; margin-left: 16px; }
+.view-switcher { display: flex; gap: 4px; margin-left: auto; }
+/* Toast notification */
+#toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+         background: #22313f; color: #fff; padding: 10px 22px; border-radius: 10px;
+         font-size: 14px; font-weight: 500; z-index: 99999; box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+         opacity: 0; transition: opacity 0.25s; pointer-events: none; white-space: nowrap; }
+#toast.toast-ok { background: #27ae60; }
+#toast.toast-err { background: #e74c3c; }
+#toast.show { opacity: 1; }
 .view-switcher button { background: rgba(255,255,255,0.1); border: none; color: rgba(255,255,255,0.6);
                         padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 13px; }
 .view-switcher button:hover { background: rgba(255,255,255,0.2); color: #fff; }
@@ -804,6 +828,8 @@ document.addEventListener('keydown', function(e) {
 });
 document.addEventListener('DOMContentLoaded', function() {
     applyDebugMode();
+    updateDiskHealth();
+    window.setInterval(updateDiskHealth, 30000);
     if ((window.KANATKA_PAGE_KEY === 'series-list' || window.KANATKA_PAGE_KEY === 'sheets') && window.KANATKA_MONITOR_ACTIVE) {
         window.setInterval(function() {
             fetch('/api/monitor', {
@@ -920,6 +946,16 @@ function changePassword() {
     });
 }
 
+// Toast notification
+function showToast(msg, type) {
+    var t = document.getElementById('toast');
+    if (!t) return;
+    t.textContent = msg;
+    t.className = 'show' + (type === 'ok' ? ' toast-ok' : type === 'err' ? ' toast-err' : '');
+    clearTimeout(window._toastTimer);
+    window._toastTimer = setTimeout(function() { t.className = t.className.replace(' show','').replace('show',''); }, 3000);
+}
+
 // Monitor control
 function toggleMonitor(action) {
     fetch('/api/monitor', {
@@ -929,19 +965,14 @@ function toggleMonitor(action) {
         credentials: 'same-origin'
     }).then(function(resp) {
         return resp.json().catch(function() { return {}; }).then(function(data) {
-            if (!resp.ok) {
-                throw new Error(data.error || ('HTTP ' + resp.status));
-            }
-            if (data.error) {
-                throw new Error(data.error);
-            }
-            if (action === 'start' && !data.active) {
-                throw new Error(data.error || 'Мониторинг не запустился');
+            if (action === 'start') {
+                if (!resp.ok) { showToast('\u041e\u0448\u0438\u0431\u043a\u0430: ' + (data.error || 'HTTP ' + resp.status), 'err'); return; }
+                if (!data.active) { showToast('\u041c\u043e\u043d\u0438\u0442\u043e\u0440\u0438\u043d\u0433 \u043d\u0435 \u0437\u0430\u043f\u0443\u0441\u0442\u0438\u043b\u0441\u044f: ' + (data.error || ''), 'err'); return; }
             }
             location.reload();
         });
     })
-    .catch(function(e) { alert('Ошибка: ' + e.message); });
+    .catch(function(e) { showToast('\u041e\u0448\u0438\u0431\u043a\u0430: ' + e.message, 'err'); });
 }
 
 // View switcher
@@ -1030,12 +1061,83 @@ function runCleanup() {
     .then(function(data) {
         if (data.status === 'ok') {
             closeCleanup();
-            location.reload();
+            showToast('\u0423\u0434\u0430\u043b\u0435\u043d\u043e \u0444\u0430\u0439\u043b\u043e\u0432: ' + (data.deleted || 0), 'ok');
+            setTimeout(function() { location.reload(); }, 1200);
         } else {
-            alert('Ошибка: ' + (data.error || 'неизвестная'));
+            showToast('\u041e\u0448\u0438\u0431\u043a\u0430: ' + (data.error || '\u043d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u0430\u044f'), 'err');
         }
     })
-    .catch(function(e) { alert('Ошибка: ' + e.message); });
+    .catch(function(e) { showToast('\u041e\u0448\u0438\u0431\u043a\u0430: ' + e.message, 'err'); });
+}
+
+// ZIP export modal
+function openZipModal() {
+    document.getElementById('zip-modal').style.display = 'flex';
+}
+function closeZipModal() {
+    document.getElementById('zip-modal').style.display = 'none';
+}
+function toggleZipCustom() {
+    var preset = document.querySelector('input[name="zip-preset"]:checked');
+    var custom = document.getElementById('zip-custom-range');
+    if (custom) custom.style.display = (preset && preset.value === 'custom') ? 'block' : 'none';
+}
+function runZipExport() {
+    var preset = document.querySelector('input[name="zip-preset"]:checked');
+    if (!preset) return;
+    var dateFrom = '', dateTo = '';
+    var today = new Date().toISOString().slice(0, 10);
+    if (preset.value === 'today') {
+        dateFrom = today; dateTo = today;
+    } else if (preset.value === 'week') {
+        var d = new Date(); d.setDate(d.getDate() - 7);
+        dateFrom = d.toISOString().slice(0, 10); dateTo = today;
+    } else if (preset.value === 'custom') {
+        dateFrom = document.getElementById('zip-from').value;
+        dateTo = document.getElementById('zip-to').value;
+    }
+    var btn = document.getElementById('zip-run-btn');
+    btn.disabled = true; btn.textContent = '\u0421\u043e\u0437\u0434\u0430\u0451\u043c...';
+    fetch('/api/export-zip', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({preset: preset.value, date_from: dateFrom, date_to: dateTo}),
+        credentials: 'same-origin'
+    }).then(function(r) { return r.json(); })
+    .then(function(data) {
+        btn.disabled = false; btn.textContent = '\u0421\u043e\u0437\u0434\u0430\u0442\u044c ZIP';
+        if (data.status === 'ok') {
+            closeZipModal();
+            showToast('ZIP \u0441\u043e\u0445\u0440\u0430\u043d\u0451\u043d: ' + data.filename, 'ok');
+        } else {
+            showToast('\u041e\u0448\u0438\u0431\u043a\u0430: ' + (data.error || '\u043d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u0430\u044f'), 'err');
+        }
+    })
+    .catch(function(e) {
+        btn.disabled = false; btn.textContent = '\u0421\u043e\u0437\u0434\u0430\u0442\u044c ZIP';
+        showToast('\u041e\u0448\u0438\u0431\u043a\u0430: ' + e.message, 'err');
+    });
+}
+
+// Disk health polling — textContent only, no user-controlled data
+function updateDiskHealth() {
+    fetch('/api/health', {credentials: 'same-origin'})
+    .then(function(r) { return r.json().catch(function() { return {}; }); })
+    .then(function(data) {
+        var el = document.getElementById('disk-indicator');
+        if (!el) return;
+        var freeText = data.free_gb != null ? (data.free_gb + '\u00a0\u0413\u0411') : '...';
+        if (data.status === 'critical') {
+            el.textContent = '\uD83D\uDD34 ' + freeText;
+            el.style.color = '#e74c3c';
+        } else if (data.status === 'warning') {
+            el.textContent = '\u26A0 ' + freeText;
+            el.style.color = '#f39c12';
+        } else {
+            el.textContent = '\uD83D\uDCBE ' + freeText;
+            el.style.color = '#aaa';
+        }
+    }).catch(function() {});
 }
 """
 
@@ -1109,12 +1211,18 @@ def _page(title: str, body: str, stats: str = "", active_nav: str = "series",
         f'    <a href="/sheets" class="{nav_cls("sheets")}">&#128196; Листы</a>\n'
         f'    <a href="/settings" class="{nav_cls("settings")}">&#9881; Настройки</a>\n'
         '    <button class="nav-btn" onclick="refreshPage(); return false;">Обновить</button>\n'
-        '    <button id="debug-toggle" class="nav-btn" onclick="toggleDebugMode(); return false;">Debug score: OFF</button>\n'
-        '    <a href="#" onclick="openCleanup(); return false;" style="color:#e74c3c">&#128465; Очистка</a>\n'
+        '    <button class="nav-btn" onclick="openZipModal(); return false;">&#128190; Архив</button>\n'
+        '    <button id="debug-toggle" class="nav-btn" onclick="toggleDebugMode(); return false;">Debug</button>\n'
+        '    <button class="nav-btn" onclick="openCleanup(); return false;" '
+        'style="color:#ff7675; border-color:rgba(255,118,117,0.35)">&#128465; Очистка</button>\n'
         '  </div>\n'
         f'  {view_switcher_html}'
-        f'  {monitor_html}'
-        f'  <div class="nav-right">{stats}</div>\n'
+        '  <div class="nav-right">\n'
+        '    <span id="disk-indicator" style="font-size:13px; font-weight:600; color:#aaa; white-space:nowrap">'
+        '\U0001F4BE ...</span>\n'
+        f'    {monitor_html}'
+        + (f'    <span style="opacity:0.4">|</span><span>{stats}</span>\n' if stats else '')
+        + '  </div>\n'
         '</nav>\n'
         f'<div class="container">{body}</div>\n'
         '<div id="cleanup-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%;'
@@ -1138,6 +1246,26 @@ def _page(title: str, body: str, stats: str = "", active_nav: str = "series",
         '<div style="display:flex; gap:12px; margin-top:20px; justify-content:flex-end">'
         '<button onclick="closeCleanup()" style="padding:8px 20px; border:1px solid #ddd; border-radius:8px; background:#fff; cursor:pointer">Отмена</button>'
         '<button onclick="runCleanup()" style="padding:8px 20px; border:none; border-radius:8px; background:#e74c3c; color:#fff; cursor:pointer; font-weight:600">Удалить</button>'
+        '</div></div></div>\n'
+        '<div id="toast" role="status" aria-live="polite"></div>\n'
+        '<div id="zip-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%;'
+        ' background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center">'
+        '<div style="background:#fff; border-radius:16px; padding:28px 32px; max-width:400px; width:90%">'
+        '<h3 style="margin-top:0">&#128190; Архив ZIP</h3>'
+        '<p style="color:#666; font-size:13px; margin-bottom:16px">ZIP с лучшими фото и листами будет сохранён на Рабочий стол.</p>'
+        '<div style="display:flex; flex-direction:column; gap:10px; margin-bottom:16px">'
+        '<label style="cursor:pointer"><input type="radio" name="zip-preset" value="all" checked onchange="toggleZipCustom()"> Всё</label>'
+        '<label style="cursor:pointer"><input type="radio" name="zip-preset" value="today" onchange="toggleZipCustom()"> Сегодня</label>'
+        '<label style="cursor:pointer"><input type="radio" name="zip-preset" value="week" onchange="toggleZipCustom()"> Эта неделя</label>'
+        '<label style="cursor:pointer"><input type="radio" name="zip-preset" value="custom" onchange="toggleZipCustom()"> Свой диапазон</label>'
+        '</div>'
+        '<div id="zip-custom-range" style="display:none; margin-bottom:16px">'
+        '<label style="font-size:13px">С&nbsp;<input type="date" id="zip-from">'
+        '&nbsp;по&nbsp;<input type="date" id="zip-to"></label>'
+        '</div>'
+        '<div style="display:flex; gap:12px; justify-content:flex-end">'
+        '<button onclick="closeZipModal()" style="padding:8px 20px; border:1px solid #ddd; border-radius:8px; background:#fff; cursor:pointer">Отмена</button>'
+        '<button id="zip-run-btn" onclick="runZipExport()" style="padding:8px 20px; border:none; border-radius:8px; background:#3498db; color:#fff; cursor:pointer; font-weight:600">Создать ZIP</button>'
         '</div></div></div>\n'
         '<div id="fullscreen" class="fullscreen-overlay" onclick="closeLightbox(event)">'
         '<div class="lightbox-shell">'
@@ -1363,12 +1491,16 @@ def _render_series_list(all_series: list[dict], config: dict, page: int = 1, fil
 
     empty_state = ""
     if not cards:
-        empty_label = "История пуста." if history_mode else "В рабочем окне сейчас нет доступных серий."
-        empty_hint = (
-            "Здесь собраны только серии, для которых уже очищены рабочие файлы."
-            if history_mode else
-            "Очищенные серии вынесены из основного окна и доступны отдельно во вкладке «История»."
-        )
+        empty_label = "История пуста." if history_mode else "В рабочем окне пока нет серий."
+        if history_mode:
+            empty_hint = "Здесь собраны только серии, для которых уже очищены рабочие файлы."
+        elif history_series:
+            empty_hint = (
+                f"Запустите мониторинг и симулятор камеры — новые серии появятся здесь. "
+                f"Ранее обработанные серии ({len(history_series)} шт.) доступны во вкладке «История»."
+            )
+        else:
+            empty_hint = "Запустите мониторинг входящей папки и запустите симулятор камеры."
         empty_state = (
             '<div style="background:#fff; border-radius:14px; padding:22px 24px; color:#55606f; '
             'box-shadow:0 2px 8px rgba(0,0,0,0.05); margin-bottom:16px">'
@@ -1393,7 +1525,10 @@ def _render_series_detail(series: dict, selected_dir: Path, config: dict) -> str
     name = series.get("series", "?")
     photos = series.get("photos", [])
     selected_file = series.get("selected_file", "")
-    existing_selected = {p.name for p in selected_dir.glob("*.jpg")}
+    existing_selected = (
+        {p.name for p in selected_dir.iterdir() if p.suffix.lower() in {".jpg", ".jpeg", ".png"}}
+        if selected_dir.exists() else set()
+    )
     live_series = _series_has_live_assets(series, config)
 
     breadcrumb = (
@@ -1493,7 +1628,10 @@ def _render_nearby(
     checkboxes for batch selection and a sticky action bar at the bottom.
     """
     center_name = center_series.get("series", "?")
-    existing_selected = {p.name for p in selected_dir.glob("*.jpg")}
+    existing_selected = (
+        {p.name for p in selected_dir.iterdir() if p.suffix.lower() in {".jpg", ".jpeg", ".png"}}
+        if selected_dir.exists() else set()
+    )
 
     # Find index of center series
     center_idx = None
@@ -1832,6 +1970,27 @@ _SETTINGS_SCHEMA: list[tuple[str, str, list[tuple]]] = [
              "text", {}),
         ],
     ),
+    (
+        "Мониторинг диска",
+        "Пороги предупреждений о нехватке свободного места на диске.",
+        [
+            ("health", "min_free_gb", "Предупреждение (ГБ)",
+             "Если свободного места меньше этого значения — жёлтый индикатор в навбаре.",
+             "range", {"min": 0.1, "max": 10.0, "step": 0.1}),
+            ("health", "critical_free_gb", "Критично (ГБ)",
+             "Если свободного места меньше этого значения — красный индикатор и блокировка запуска мониторинга.",
+             "range", {"min": 0.1, "max": 5.0, "step": 0.1}),
+        ],
+    ),
+    (
+        "Логирование",
+        "Управление записью логов на диск. Отключение экономит ресурсы SSD.",
+        [
+            ("logging", "log_to_file", "Записывать лог в файл",
+             "Если выключено — логи выводятся только в консоль. Изменение вступает в силу после перезапуска программы.",
+             "checkbox", {}),
+        ],
+    ),
 ]
 
 
@@ -1926,7 +2085,8 @@ function printSheet(name) {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({sheet: name})
     }).then(function(r) { return r.json(); }).then(function(d) {
-        alert(d.status === 'ok' ? 'Лист отправлен на печать' : 'Ошибка: ' + (d.error || 'неизвестная'));
+        if (d.status === 'ok') { showToast('Лист отправлен на печать', 'ok'); }
+        else { showToast('Ошибка: ' + (d.error || 'неизвестная'), 'err'); }
     });
 }
 """
@@ -2210,6 +2370,23 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
         SeriesBrowserHandler._series_cache = None
         self._send_json({"status": "ok", "deleted": total_deleted})
 
+    def _handle_export_zip(self, body: str) -> None:
+        """Create a ZIP archive of selected photos and sheets."""
+        try:
+            data = json.loads(body) if body else {}
+        except json.JSONDecodeError:
+            data = {}
+        date_from = data.get("date_from") or None
+        date_to = data.get("date_to") or None
+        try:
+            from export_utils import create_results_zip
+            zip_path = create_results_zip(self.config, date_from=date_from, date_to=date_to)
+            self._send_json({"status": "ok", "filename": zip_path.name})
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, 400)
+        except Exception as exc:
+            self._send_json({"error": str(exc)}, 500)
+
     def _handle_monitor(self, body: str) -> None:
         """Start or stop INBOX monitoring."""
         try:
@@ -2220,6 +2397,17 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
 
         action = data.get("action", "")
         if action == "start":
+            try:
+                from watcher import check_disk_space
+                disk = check_disk_space(self.config)
+                if disk["status"] == "critical":
+                    self._send_json({
+                        "error": f"Критически мало места на диске: {disk['free_gb']} ГБ. Мониторинг не запущен.",
+                        "disk": disk,
+                    }, 400)
+                    return
+            except Exception:
+                pass
             _start_monitoring(self.config)
             time.sleep(0.3)
             self._send_json(_MonitorState.status_dict())
@@ -2387,6 +2575,14 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
             else:
                 self._send_html("<h1>Серия не найдена</h1>", 404)
 
+        elif path == "/api/health":
+            try:
+                from watcher import check_disk_space
+                disk_data = check_disk_space(self.config)
+            except Exception:
+                disk_data = {"free_gb": None, "status": "ok"}
+            self._send_json(disk_data)
+
         elif path == "/sheets":
             html = _render_sheets_gallery(self.config)
             self._send_html(html)
@@ -2438,6 +2634,10 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         content_len = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(content_len).decode("utf-8")
+
+        if parsed.path == "/api/export-zip":
+            self._handle_export_zip(body)
+            return
 
         if parsed.path == "/api/cleanup":
             self._handle_cleanup(body)

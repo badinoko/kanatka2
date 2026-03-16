@@ -51,8 +51,8 @@ class LoadAllSeriesTests(unittest.TestCase):
             result = load_all_series(log_dir)
 
             self.assertEqual(len(result), 2)
-            self.assertEqual(result[0]["series"], "SER001")
-            self.assertEqual(result[1]["series"], "SER002")
+            self.assertEqual(result[0]["series"], "SER002")
+            self.assertEqual(result[1]["series"], "SER001")
 
     def test_skips_invalid_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -251,6 +251,21 @@ class SeriesListRenderTests(unittest.TestCase):
 
         self.assertIn('refreshPage()', html)
         self.assertIn('Отчёты серий, логи, аннотации (убирает карточки серий)', html)
+
+    def test_navbar_has_archive_button_and_disk_indicator(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            html = _render_series_list([], _make_config(tmp), page=1, filter_status="")
+
+        self.assertIn('openZipModal()', html)
+        self.assertIn('disk-indicator', html)
+
+    def test_zip_modal_present(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            html = _render_series_list([], _make_config(tmp), page=1, filter_status="")
+
+        self.assertIn('id="zip-modal"', html)
+        self.assertIn('zip-preset', html)
+        self.assertIn('runZipExport()', html)
 
     def test_working_view_hides_history_but_history_tab_keeps_access(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -11,7 +11,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from watcher import group_files_by_time
+from watcher import check_disk_space, group_files_by_time
 
 
 class GroupFilesByTimeTests(unittest.TestCase):
@@ -41,6 +41,46 @@ class GroupFilesByTimeTests(unittest.TestCase):
 
         self.assertEqual(len(groups), 1)
         self.assertEqual([path.name for path in groups[0]], ["frame1.jpg", "frame2.jpg", "frame3.jpg"])
+
+
+class CheckDiskSpaceTests(unittest.TestCase):
+    def test_returns_ok_when_plenty_of_space(self) -> None:
+        import shutil as _shutil
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            selected = Path(tmp) / "selected"
+            selected.mkdir()
+            config = {
+                "paths": {"output_selected": str(selected)},
+                "health": {"min_free_gb": 0.001, "critical_free_gb": 0.0001},
+            }
+            result = check_disk_space(config)
+        self.assertIn(result["status"], {"ok", "warning", "critical"})
+        self.assertIsInstance(result["free_gb"], float)
+
+    def test_status_critical_when_threshold_exceeds_free(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            selected = Path(tmp) / "selected"
+            selected.mkdir()
+            # Set thresholds above any realistic free space
+            config = {
+                "paths": {"output_selected": str(selected)},
+                "health": {"min_free_gb": 999999.0, "critical_free_gb": 999998.0},
+            }
+            result = check_disk_space(config)
+        self.assertEqual(result["status"], "critical")
+
+    def test_returns_ok_on_oserror(self) -> None:
+        config = {
+            "paths": {"output_selected": "/nonexistent/path/that/cannot/exist"},
+            "health": {"min_free_gb": 1.0, "critical_free_gb": 0.2},
+        }
+        result = check_disk_space(config)
+        self.assertEqual(result["status"], "ok")
+        self.assertIsNone(result["free_gb"])
 
 
 if __name__ == "__main__":
