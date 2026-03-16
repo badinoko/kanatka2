@@ -673,9 +673,9 @@ body { font-family: -apple-system, 'Segoe UI', Arial, sans-serif; background: #f
 .header h1 { font-size: 20px; font-weight: 600; }
 .header .stats { font-size: 14px; color: #666; }
 .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-.breadcrumb { margin-bottom: 16px; font-size: 14px; }
-.breadcrumb a { color: #4a6fa5; text-decoration: none; }
-.breadcrumb a:hover { text-decoration: underline; }
+.breadcrumb { margin-bottom: 20px; font-size: 17px; font-weight: 500; }
+.breadcrumb a { color: #2563c7; text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; color: #1a4fa8; }
 
 /* Series list */
 .series-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
@@ -2094,8 +2094,14 @@ def _render_sheets_gallery(config: dict) -> str:
         reverse=True,
     )
 
+    sheets_breadcrumb = (
+        '<div class="breadcrumb">'
+        '<a href="/">\u2190 Серии</a> / Листы'
+        '</div>'
+    )
+
     if not sheet_files:
-        body = '<h2 style="text-align:center; color:#999; margin-top:60px">Нет собранных листов</h2>'
+        body = sheets_breadcrumb + '<h2 style="text-align:center; color:#999; margin-top:60px">Нет собранных листов</h2>'
         return _page("Kanatka — Листы", body, active_nav="sheets", page_key="sheets")
 
     cards = []
@@ -2149,7 +2155,7 @@ function printSheet(name) {
 }
 """
 
-    body = (
+    body = sheets_breadcrumb + (
         f'<h2>Собранные листы '
         f'<span style="font-size:14px; color:{mode_color}; font-weight:700">{mode_label}</span>'
         f'</h2>'
