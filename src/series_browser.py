@@ -478,7 +478,13 @@ def _resolve_series_card_thumb(series: dict, config: dict) -> Path | None:
             candidate = _resolve_runtime_path(config, path_key) / selected_file
             if candidate.exists():
                 return candidate
-    for photo in series.get("photos", []):
+    # Fallback: try photos sorted by score descending so the best available is shown
+    photos_by_score = sorted(
+        series.get("photos", []),
+        key=lambda p: p.get("score", 0) if isinstance(p.get("score"), (int, float)) else 0,
+        reverse=True,
+    )
+    for photo in photos_by_score:
         existing = _find_existing_photo_for_series(photo, series_name, config, selected_file=selected_file)
         if existing:
             return existing
@@ -656,13 +662,13 @@ body.debug-enabled .debug-breakdown { display: flex; }
 .fullscreen-overlay.active { display: flex; }
 .lightbox-shell { width: min(1600px, 100%); height: min(94vh, 1120px); display: grid; grid-template-columns: minmax(0, 1fr) 300px;
                   background: #0f1723; border-radius: 18px; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.45); }
-.lightbox-main { position: relative; display: flex; align-items: center; justify-content: center; background: #05080d; min-width: 0; }
+.lightbox-main { position: relative; display: flex; align-items: center; justify-content: center; background: #05080d; min-width: 0; overflow: hidden; }
 .lightbox-main img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .lightbox-close { position: absolute; top: 16px; right: 16px; width: 42px; height: 42px; border-radius: 50%; border: none;
-                  background: rgba(255,255,255,0.14); color: #fff; cursor: pointer; font-size: 24px; line-height: 1; }
+                  background: rgba(255,255,255,0.14); color: #fff; cursor: pointer; font-size: 24px; line-height: 1; z-index: 10; }
 .lightbox-close:hover { background: rgba(255,255,255,0.24); }
 .lightbox-nav { position: absolute; top: 50%; transform: translateY(-50%); width: 48px; height: 48px; border-radius: 50%; border: none;
-                background: rgba(255,255,255,0.12); color: #fff; cursor: pointer; font-size: 26px; line-height: 1; }
+                background: rgba(255,255,255,0.12); color: #fff; cursor: pointer; font-size: 26px; line-height: 1; z-index: 10; }
 .lightbox-nav:hover:not(:disabled) { background: rgba(255,255,255,0.22); }
 .lightbox-nav:disabled { opacity: 0.28; cursor: default; }
 .lightbox-nav.prev { left: 16px; }
