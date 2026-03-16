@@ -6,6 +6,7 @@ all processed series with thumbnails, scores, and rescue controls.
 from __future__ import annotations
 
 import hashlib
+import html as _html
 import io
 import json
 import secrets
@@ -2229,7 +2230,7 @@ def _render_settings(config: dict) -> str:
                     f'<select id="printer-select-{section}-{key}"'
                     f' name="{section}.{key}"'
                     f' style="flex:1;padding:6px 10px;border:1px solid #d0d7e2;border-radius:8px;font-size:14px">'
-                    f'<option value="{current_val}">{display}</option>'
+                    f'<option value="{_html.escape(current_val, quote=True)}">{_html.escape(display)}</option>'
                     f'</select>'
                     f'<button type="button"'
                     f' onclick="loadPrinterList(this.previousElementSibling)"'
