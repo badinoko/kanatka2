@@ -53,6 +53,76 @@ class _MonitorState:
         }
 
 
+class _SimulatorState:
+    """Tracks whether the inbox simulator is currently running."""
+    running: bool = False
+    thread: threading.Thread | None = None
+
+    @classmethod
+    def is_active(cls) -> bool:
+        return cls.running and cls.thread is not None and cls.thread.is_alive()
+
+
+def _run_inbox_simulation(config: dict, initial_delay: float = 5.0) -> None:
+    """Background thread: copy files from INBOX to incoming with realistic delays.
+
+    This is a demo/testing convenience — simulates how the real camera would
+    deliver files in batches.  Remove or disable before production deployment.
+    """
+    import random as _random
+    import shutil as _shutil
+    import time as _time
+    from datetime import datetime as _dt
+
+    from config_utils import get_project_root
+    from image_utils import list_image_files
+
+    _SimulatorState.running = True
+    logger = build_logger(
+        config["paths"]["log_dir"],
+        log_to_file=config.get("logging", {}).get("log_to_file", True),
+    )
+    try:
+        inbox_dir = Path(config["paths"]["test_photos_folder"])
+        if not inbox_dir.is_absolute():
+            inbox_dir = get_project_root() / inbox_dir
+
+        incoming_dir = Path(config["paths"]["input_folder"])
+        if not incoming_dir.is_absolute():
+            incoming_dir = get_project_root() / incoming_dir
+        incoming_dir.mkdir(parents=True, exist_ok=True)
+
+        _time.sleep(initial_delay)
+
+        files = list_image_files(inbox_dir)
+        if not files:
+            logger.warning("Симулятор INBOX: папка пуста, нечего отправлять")
+            return
+
+        rng = _random.Random(42)
+        rng.shuffle(files)
+        series_size = 8
+        series_list = [files[i:i + series_size] for i in range(0, len(files), series_size)]
+        logger.info("Симулятор INBOX: %d серий, %d файлов", len(series_list), len(files))
+
+        for s_idx, series in enumerate(series_list, 1):
+            for f_idx, photo_path in enumerate(series, 1):
+                timestamp = _dt.now().strftime("%Y%m%d_%H%M%S_%f")
+                target_name = f"SIM{s_idx:03d}_IMG{f_idx:03d}_{timestamp}{photo_path.suffix.lower()}"
+                _shutil.copy(photo_path, incoming_dir / target_name)
+                logger.info("Симулятор: серия %d/%d кадр %d/%d → %s",
+                            s_idx, len(series_list), f_idx, len(series), target_name)
+                _time.sleep(0.2)
+            if s_idx != len(series_list):
+                delay = rng.uniform(3.0, 4.0)
+                logger.info("Симулятор: пауза %.1f сек", delay)
+                _time.sleep(delay)
+
+        logger.info("Симулятор INBOX завершён: %d серий", len(series_list))
+    finally:
+        _SimulatorState.running = False
+
+
 def _start_monitoring(config: dict) -> None:
     """Start watching the incoming folder in a background thread."""
     if _MonitorState.is_active():
@@ -711,10 +781,11 @@ body.debug-enabled .lightbox-debug-panel { display: block; }
 /* Card size switcher */
 .view-switcher { display: flex; gap: 4px; margin-left: auto; }
 /* Toast notification */
-#toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
-         background: #22313f; color: #fff; padding: 10px 22px; border-radius: 10px;
-         font-size: 14px; font-weight: 500; z-index: 99999; box-shadow: 0 4px 16px rgba(0,0,0,0.25);
-         opacity: 0; transition: opacity 0.25s; pointer-events: none; white-space: nowrap; }
+#toast { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+         background: #22313f; color: #fff; padding: 14px 28px; border-radius: 12px;
+         font-size: 15px; font-weight: 500; z-index: 99999; box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+         opacity: 0; transition: opacity 0.25s; pointer-events: none;
+         max-width: 600px; text-align: center; white-space: pre-wrap; }
 #toast.toast-ok { background: #27ae60; }
 #toast.toast-err { background: #e74c3c; }
 #toast.show { opacity: 1; }
@@ -947,14 +1018,32 @@ function changePassword() {
 }
 
 // Toast notification
-function showToast(msg, type) {
+function showToast(msg, type, duration) {
     var t = document.getElementById('toast');
     if (!t) return;
     t.textContent = msg;
     t.className = 'show' + (type === 'ok' ? ' toast-ok' : type === 'err' ? ' toast-err' : '');
     clearTimeout(window._toastTimer);
-    window._toastTimer = setTimeout(function() { t.className = t.className.replace(' show','').replace('show',''); }, 3000);
+    window._toastTimer = setTimeout(function() { t.className = t.className.replace(' show','').replace('show',''); }, duration || 3000);
 }
+
+// README modal
+function openReadme() {
+    var m = document.getElementById('readme-modal');
+    m.style.display = 'flex';
+    var content = document.getElementById('readme-content');
+    if (content.getAttribute('data-loaded')) return;
+    fetch('/api/readme').then(function(r) { return r.text(); }).then(function(html) {
+        content.innerHTML = html;
+        content.setAttribute('data-loaded', '1');
+    }).catch(function() { content.innerHTML = '<p>Не удалось загрузить инструкцию.</p>'; });
+}
+function closeReadme() {
+    document.getElementById('readme-modal').style.display = 'none';
+}
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeReadme();
+});
 
 // Monitor control
 function toggleMonitor(action) {
@@ -968,6 +1057,19 @@ function toggleMonitor(action) {
             if (action === 'start') {
                 if (!resp.ok) { showToast('\u041e\u0448\u0438\u0431\u043a\u0430: ' + (data.error || 'HTTP ' + resp.status), 'err'); return; }
                 if (!data.active) { showToast('\u041c\u043e\u043d\u0438\u0442\u043e\u0440\u0438\u043d\u0433 \u043d\u0435 \u0437\u0430\u043f\u0443\u0441\u0442\u0438\u043b\u0441\u044f: ' + (data.error || ''), 'err'); return; }
+                // Launch inbox simulator and show test-mode notice
+                fetch('/api/simulate', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'})
+                    .then(function(r) { return r.json(); })
+                    .then(function(d) {
+                        if (d.status === 'ok') {
+                            showToast('\u26a0\ufe0f \u0422\u0415\u0421\u0422\u041e\u0412\u042b\u0419 \u0420\u0415\u0416\u0418\u041c: \u0441\u0438\u043c\u0443\u043b\u044f\u0442\u043e\u0440 \u043f\u043e\u0434\u0430\u0451\u0442 \u0444\u043e\u0442\u043e \u0438\u0437 INBOX. \u0412 \u0440\u0430\u0431\u043e\u0447\u0435\u043c \u0440\u0435\u0436\u0438\u043c\u0435 \u0444\u043e\u0442\u043e \u043f\u043e\u0441\u0442\u0443\u043f\u0430\u044e\u0442 \u043e\u0442 \u043a\u0430\u043c\u0435\u0440\u044b \u0430\u0432\u0442\u043e\u043c\u0430\u0442\u0438\u0447\u0435\u0441\u043a\u0438.', null, 5000);
+                        } else if (d.status === 'inbox_empty') {
+                            showToast('\u041c\u043e\u043d\u0438\u0442\u043e\u0440\u0438\u043d\u0433 \u0437\u0430\u043f\u0443\u0449\u0435\u043d. \u041f\u0430\u043f\u043a\u0430 INBOX \u043f\u0443\u0441\u0442\u0430 \u2014 \u0434\u043e\u0431\u0430\u0432\u044c\u0442\u0435 \u0444\u043e\u0442\u043e \u0432 INBOX \u0434\u043b\u044f \u0442\u0435\u0441\u0442\u0430.', 'err');
+                        }
+                        setTimeout(function() { location.reload(); }, d.status === 'ok' ? 5200 : 2200);
+                    })
+                    .catch(function() { location.reload(); });
+                return;
             }
             location.reload();
         });
@@ -1215,6 +1317,8 @@ def _page(title: str, body: str, stats: str = "", active_nav: str = "series",
         '    <button id="debug-toggle" class="nav-btn" onclick="toggleDebugMode(); return false;">Debug</button>\n'
         '    <button class="nav-btn" onclick="openCleanup(); return false;" '
         'style="color:#ff7675; border-color:rgba(255,118,117,0.35)">&#128465; Очистка</button>\n'
+        '    <button class="nav-btn" onclick="openReadme(); return false;" '
+        'style="background:#e74c3c; color:#fff; border-color:#c0392b; font-weight:700">&#128214; Инструкция</button>\n'
         '  </div>\n'
         f'  {view_switcher_html}'
         '  <div class="nav-right">\n'
@@ -1266,6 +1370,20 @@ def _page(title: str, body: str, stats: str = "", active_nav: str = "series",
         '<div style="display:flex; gap:12px; justify-content:flex-end">'
         '<button onclick="closeZipModal()" style="padding:8px 20px; border:1px solid #ddd; border-radius:8px; background:#fff; cursor:pointer">Отмена</button>'
         '<button id="zip-run-btn" onclick="runZipExport()" style="padding:8px 20px; border:none; border-radius:8px; background:#3498db; color:#fff; cursor:pointer; font-weight:600">Создать ZIP</button>'
+        '</div></div></div>\n'
+        '<div id="readme-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%;'
+        ' background:rgba(0,0,0,0.6); z-index:9999; align-items:center; justify-content:center">'
+        '<div style="background:#fff; border-radius:16px; padding:28px 32px; max-width:720px; width:94%;'
+        ' max-height:82vh; display:flex; flex-direction:column">'
+        '<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; flex-shrink:0">'
+        '<h2 style="margin:0; color:#1a1a2e">&#128214; Инструкция</h2>'
+        '<button onclick="closeReadme()" style="font-size:22px; background:none; border:none; cursor:pointer; color:#666; line-height:1">&times;</button>'
+        '</div>'
+        '<div id="readme-content" style="overflow-y:auto; flex:1; font-size:14px; line-height:1.6; color:#333">'
+        '<p style="color:#aaa">Загрузка...</p>'
+        '</div>'
+        '<div style="margin-top:16px; flex-shrink:0; text-align:right">'
+        '<button onclick="closeReadme()" style="padding:8px 24px; border:none; border-radius:8px; background:#1a1a2e; color:#fff; cursor:pointer; font-weight:600">Закрыть</button>'
         '</div></div></div>\n'
         '<div id="fullscreen" class="fullscreen-overlay" onclick="closeLightbox(event)">'
         '<div class="lightbox-shell">'
@@ -2264,6 +2382,63 @@ if (window.location.hash === '#change-password') {
     return _page("Kanatka — Настройки", body, active_nav="settings")
 
 
+def _md_to_html(text: str) -> str:
+    """Convert minimal markdown to HTML for the README modal."""
+    import re as _re
+    lines = text.split("\n")
+    result: list[str] = []
+    in_ul = False
+    in_code = False
+    for line in lines:
+        if line.startswith("```"):
+            if in_ul:
+                result.append("</ul>")
+                in_ul = False
+            in_code = not in_code
+            result.append("<pre>" if in_code else "</pre>")
+            continue
+        if in_code:
+            result.append(line.replace("&", "&amp;").replace("<", "&lt;"))
+            continue
+        if line.startswith("### "):
+            if in_ul:
+                result.append("</ul>")
+                in_ul = False
+            result.append(f"<h4 style='margin:14px 0 4px'>{line[4:]}</h4>")
+        elif line.startswith("## "):
+            if in_ul:
+                result.append("</ul>")
+                in_ul = False
+            result.append(f"<h3 style='margin:18px 0 6px; border-bottom:1px solid #eee; padding-bottom:4px'>{line[3:]}</h3>")
+        elif line.startswith("# "):
+            if in_ul:
+                result.append("</ul>")
+                in_ul = False
+            result.append(f"<h2 style='margin:0 0 12px'>{line[2:]}</h2>")
+        elif line.startswith(("- ", "* ")):
+            if not in_ul:
+                result.append("<ul style='margin:6px 0; padding-left:20px'>")
+                in_ul = True
+            content = _re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", line[2:])
+            content = _re.sub(r"`(.+?)`", r"<code style='background:#f4f4f4;padding:1px 4px;border-radius:3px'>\1</code>", content)
+            result.append(f"<li style='margin:3px 0'>{content}</li>")
+        elif line.strip() == "":
+            if in_ul:
+                result.append("</ul>")
+                in_ul = False
+            result.append("<br>")
+        else:
+            if in_ul:
+                result.append("</ul>")
+                in_ul = False
+            content = _re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", line)
+            content = _re.sub(r"`(.+?)`", r"<code style='background:#f4f4f4;padding:1px 4px;border-radius:3px'>\1</code>", content)
+            result.append(f"<p style='margin:4px 0'>{content}</p>")
+    if in_ul:
+        result.append("</ul>")
+    return "\n".join(result)
+
+
 # ---------------------------------------------------------------------------
 # HTTP Server
 # ---------------------------------------------------------------------------
@@ -2583,6 +2758,27 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
                 disk_data = {"free_gb": None, "status": "ok"}
             self._send_json(disk_data)
 
+        elif path == "/api/readme":
+            from config_utils import get_project_root
+            _root = get_project_root()
+            _candidates = [
+                _root / "docs" / "user_testing_guide.md",
+                _root / "README.md",
+            ]
+            _md_text = ""
+            for _p in _candidates:
+                if _p.exists():
+                    try:
+                        _md_text = _p.read_text(encoding="utf-8")
+                    except OSError:
+                        pass
+                    break
+            _html_content = _md_to_html(_md_text) if _md_text else "<p>Файл инструкции не найден.</p>"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(_html_content.encode("utf-8"))
+
         elif path == "/sheets":
             html = _render_sheets_gallery(self.config)
             self._send_html(html)
@@ -2637,6 +2833,29 @@ class SeriesBrowserHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/export-zip":
             self._handle_export_zip(body)
+            return
+
+        if parsed.path == "/api/simulate":
+            from config_utils import get_project_root
+            inbox_dir = Path(self.config["paths"]["test_photos_folder"])
+            if not inbox_dir.is_absolute():
+                inbox_dir = get_project_root() / inbox_dir
+            if _SimulatorState.is_active():
+                self._send_json({"status": "already_running"})
+                return
+            has_images = inbox_dir.exists() and any(
+                f for ext in ("*.jpg", "*.jpeg", "*.png") for f in inbox_dir.glob(ext)
+            )
+            if not has_images:
+                self._send_json({"status": "inbox_empty"})
+                return
+            _SimulatorState.thread = threading.Thread(
+                target=_run_inbox_simulation,
+                args=(self.config,),
+                daemon=True,
+            )
+            _SimulatorState.thread.start()
+            self._send_json({"status": "ok"})
             return
 
         if parsed.path == "/api/cleanup":

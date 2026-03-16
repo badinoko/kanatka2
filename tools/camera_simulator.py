@@ -74,7 +74,12 @@ def main() -> int:
     parser.add_argument("--no-shuffle", action="store_true",
                         help="Не перемешивать порядок серий")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--initial-delay", type=float, default=0.0,
+                        help="Задержка перед первым кадром (сек). Используется при запуске из UI.")
     args = parser.parse_args()
+
+    if args.initial_delay > 0:
+        time.sleep(args.initial_delay)
 
     config = load_config(args.config)
     ensure_runtime_directories(config)
