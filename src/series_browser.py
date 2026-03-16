@@ -1759,7 +1759,7 @@ def _render_series_detail(series: dict, selected_dir: Path, config: dict) -> str
 
         card_class = "photo-card photo-card--selected" if already_rescued else "photo-card"
         cards.append(
-            f'<div class="{card_class}" data-fname="{fname}">'
+            f'<div class="{card_class}">'
             f'{thumb_html}'
             '<div class="photo-info">'
             f'<div class="photo-name">{fname}</div>'
