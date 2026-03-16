@@ -543,7 +543,6 @@ def _build_lightbox_debug_html(photo: dict) -> str:
 
     return (
         '<div class="lightbox-debug-summary">'
-        f'<span><b>Score:</b> {score_val:.1f}</span>'
         f'<span><b>Gate:</b> {escape(str(quality_gate))}</span>'
         f'<span><b>Детекция:</b> {escape(detect_info)}</span>'
         f'<span><b>Лиц читаемо:</b> {int(readable_faces) if isinstance(readable_faces, (int, float)) else 0}</span>'
@@ -578,13 +577,15 @@ def _build_inline_debug_html(photo: dict) -> str:
     return '<div class="debug-breakdown">' + "".join(chips) + '</div>'
 
 
-def _build_lightbox_payload_attr(src: str, title: str, subtitle: str, debug_html: str = "") -> str:
+def _build_lightbox_payload_attr(src: str, title: str, subtitle: str, debug_html: str = "", score: float = 0.0, score_label: str = "") -> str:
     payload = json.dumps(
         {
             "src": src,
             "title": title,
             "subtitle": subtitle,
             "debug_html": debug_html,
+            "score": score,
+            "score_label": score_label,
         },
         ensure_ascii=False,
     )
@@ -679,6 +680,9 @@ body.debug-enabled .debug-breakdown { display: flex; }
 .lightbox-counter { display: inline-block; background: rgba(255,255,255,0.08); border-radius: 999px; padding: 5px 10px;
                     font-size: 12px; margin-bottom: 18px; }
 .lightbox-hint { font-size: 12px; color: #8b97aa; margin-top: 12px; line-height: 1.5; }
+.lightbox-score { margin-bottom: 14px; }
+.lightbox-score-value { font-size: 38px; font-weight: 800; line-height: 1; }
+.lightbox-score-denom { font-size: 13px; color: #8b97aa; margin-left: 4px; }
 .lightbox-debug-panel { display: none; }
 body.debug-enabled .lightbox-debug-panel { display: block; }
 .lightbox-debug-summary { display: grid; gap: 8px; margin-bottom: 16px; font-size: 13px; }
@@ -882,6 +886,32 @@ function renderLightbox() {
     overlay.querySelector('.lightbox-counter').textContent =
         (lightboxState.index + 1) + ' / ' + lightboxState.items.length;
     overlay.querySelector('.lightbox-debug-panel').innerHTML = item.debug_html || '<div class="lightbox-debug-empty">Нет debug-данных.</div>';
+    var scoreEl = overlay.querySelector('.lightbox-score');
+    if (scoreEl) {
+        while (scoreEl.firstChild) scoreEl.removeChild(scoreEl.firstChild);
+        var s = typeof item.score === 'number' ? item.score : 0;
+        if (s > 0) {
+            var label = item.score_label || '';
+            var sc = label ? '#7eb8f7' : (s >= 75 ? '#2ecc71' : s >= 50 ? '#f8d57f' : '#e74c3c');
+            if (label) {
+                var labelSpan = document.createElement('span');
+                labelSpan.className = 'lightbox-score-denom';
+                labelSpan.style.display = 'block';
+                labelSpan.style.marginBottom = '2px';
+                labelSpan.textContent = label;
+                scoreEl.appendChild(labelSpan);
+            }
+            var valSpan = document.createElement('span');
+            valSpan.className = 'lightbox-score-value';
+            valSpan.style.color = sc;
+            valSpan.textContent = s.toFixed(1);
+            var denomSpan = document.createElement('span');
+            denomSpan.className = 'lightbox-score-denom';
+            denomSpan.textContent = '/ 100';
+            scoreEl.appendChild(valSpan);
+            scoreEl.appendChild(denomSpan);
+        }
+    }
     overlay.querySelector('.lightbox-nav.prev').disabled = lightboxState.index <= 0;
     overlay.querySelector('.lightbox-nav.next').disabled = lightboxState.index >= lightboxState.items.length - 1;
     overlay.classList.add('active');
@@ -1415,6 +1445,7 @@ def _page(title: str, body: str, stats: str = "", active_nav: str = "series",
         '<aside class="lightbox-side">'
         '<div class="lightbox-title"></div>'
         '<div class="lightbox-subtitle"></div>'
+        '<div class="lightbox-score"></div>'
         '<div class="lightbox-counter"></div>'
         '<div class="lightbox-debug-panel"></div>'
         '<div class="lightbox-hint">Esc — закрыть. Стрелки влево/вправо — перейти к соседнему кадру в текущей серии.</div>'
@@ -1713,8 +1744,9 @@ def _render_series_detail(series: dict, selected_dir: Path, config: dict) -> str
             payload = _build_lightbox_payload_attr(
                 full_src,
                 fname,
-                f"{name} · {detect_info} · Score {score_val:.1f}",
+                f"{name} · {detect_info}",
                 _build_lightbox_debug_html(photo),
+                score=float(score_val),
             )
             thumb_html = (
                 f'<img class="photo-thumb js-lightbox-trigger" src="{thumb_src}" alt="{fname}" loading="lazy"'
@@ -1853,8 +1885,9 @@ def _render_nearby(
                 payload = _build_lightbox_payload_attr(
                     full_src,
                     fname,
-                    f"{name} · {detect_info} · Score {score_val:.1f}",
+                    f"{name} · {detect_info}",
                     _build_lightbox_debug_html(photo),
+                    score=float(score_val),
                 )
                 thumb_html = (
                     f'<img class="photo-thumb js-lightbox-trigger" src="{thumb_src}" alt="{fname}" loading="lazy"'
@@ -2165,6 +2198,55 @@ def _render_auth_modal(config: dict, error: str = "") -> str:
     return _page("Kanatka — Вход", body, active_nav="settings")
 
 
+def _build_sheet_debug_html(sheet_path: Path) -> tuple[str, float]:
+    """Load sheet sidecar JSON and build a score grid for the lightbox sidebar.
+
+    Returns (debug_html, avg_score). avg_score is 0.0 if no metadata found.
+    """
+    meta_path = sheet_path.with_suffix(".json")
+    if not meta_path.exists():
+        return "", 0.0
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        return "", 0.0
+
+    photos = meta.get("photos", [])
+    columns = int(meta.get("columns", 2))
+    if not photos:
+        return "", 0.0
+
+    scores = [float(p["score"]) for p in photos if isinstance(p.get("score"), (int, float))]
+    avg = sum(scores) / len(scores) if scores else 0.0
+
+    def score_color(s: float) -> str:
+        return "#2ecc71" if s >= 75 else "#f8d57f" if s >= 50 else "#e74c3c"
+
+    cells = []
+    for p in photos:
+        series = escape(str(p.get("series", "—")))
+        s = p.get("score")
+        if isinstance(s, (int, float)):
+            s_f = float(s)
+            color = score_color(s_f)
+            score_html = f'<span style="font-size:20px; font-weight:800; color:{color}">{s_f:.1f}</span>'
+        else:
+            score_html = '<span style="color:#8b97aa; font-size:14px">—</span>'
+        cells.append(
+            f'<div style="background:rgba(255,255,255,0.06); border-radius:8px; padding:8px 6px; text-align:center;">'
+            f'<div style="font-size:11px; color:#8b97aa; margin-bottom:3px">{series}</div>'
+            f'{score_html}'
+            f'</div>'
+        )
+
+    grid_html = (
+        f'<div style="display:grid; grid-template-columns:repeat({columns}, 1fr); gap:6px;">'
+        + "".join(cells)
+        + "</div>"
+    )
+    return grid_html, round(avg, 1)
+
+
 def _render_sheets_gallery(config: dict) -> str:
     """Render the sheets gallery page for test mode preview."""
     sheets_dir = Path(config["paths"]["output_sheets"])
@@ -2189,10 +2271,14 @@ def _render_sheets_gallery(config: dict) -> str:
         size_kb = sf.stat().st_size // 1024
         thumb_url = f"/photo?path={sf.resolve()}&max_side=600"
         full_url = f"/photo?path={sf.resolve()}&max_side=3600"
+        sheet_debug_html, avg_score = _build_sheet_debug_html(sf)
         payload = _build_lightbox_payload_attr(
             full_url,
             sf.name,
             f"{time_str} · {size_kb} KB",
+            debug_html=sheet_debug_html,
+            score=avg_score,
+            score_label="Средняя оценка по листу" if avg_score > 0 else "",
         )
         card = (
             '<div class="sheet-card">'

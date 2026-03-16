@@ -60,7 +60,7 @@
 ## Immediate Priorities
 
 - **KAN-050**: прогнать реальный датасет заказчика, собрать замечания, откалибровать дефолты score и series grouping.
-- Собрать feedback от заказчика по v2.0 тест-пачке.
+- Ждём feedback от заказчика по v2.0 (пакет обновлён: без бейджей на листах, score в лайтбоксе, мини-сетка оценок).
 - KAN-033 (BACKLOG): deployment guide для инженера — позже.
 
 ## Execution Brief For New Chat

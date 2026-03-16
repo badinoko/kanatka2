@@ -91,7 +91,7 @@
     "sheet_width_px": 3508,
     "sheet_height_px": 4961,
     "cell_padding_px": 20,
-    "show_score_badge": true,
+    "show_score_badge": false,
     "output_format": "JPEG",
     "output_quality": 95
   }

@@ -53,12 +53,36 @@ def compose_sheet(image_paths: list[Path], output_path: str | Path, sheet_config
     return output
 
 
+def _save_sheet_meta(output_path: Path, batch: list[Path], columns: int) -> None:
+    """Save a sidecar JSON with per-photo score metadata for the composed sheet."""
+    photos = []
+    for pos, image_path in enumerate(batch):
+        score_data = load_score_overlay_data(image_path)
+        name = image_path.name
+        # Extract series prefix (e.g. "SER001" from "SER001_img.jpg")
+        series = name.split("_")[0] if "_" in name else name
+        photos.append({
+            "position": pos,
+            "file": name,
+            "series": series,
+            "score": score_data.get("score"),
+        })
+    meta = {
+        "sheet": output_path.name,
+        "columns": columns,
+        "photos": photos,
+    }
+    meta_path = output_path.with_suffix(".json")
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def compose_pending_sheets(config: dict, logger, allow_partial: bool | None = None) -> list[Path]:
     selected_dir = Path(config["paths"]["output_selected"])
     sheets_dir = Path(config["paths"]["output_sheets"])
     archive_dir = Path(config["paths"]["output_archive"]) / "sheets"
     sheet_config = config["sheet"]
     photos_per_sheet = sheet_config["photos_per_sheet"]
+    columns = sheet_config["grid_columns"]
     partial_enabled = sheet_config.get("allow_partial_sheet", False) if allow_partial is None else allow_partial
     partial_minimum = min(sheet_config.get("min_photos_to_compose", photos_per_sheet), photos_per_sheet)
 
@@ -73,6 +97,7 @@ def compose_pending_sheets(config: dict, logger, allow_partial: bool | None = No
         sheet_name = f"sheet_{datetime.now():%Y%m%d_%H%M%S_%f}"
         output_path = sheets_dir / f"{sheet_name}.jpg"
         compose_sheet(batch, output_path, sheet_config)
+        _save_sheet_meta(output_path, batch, columns)
 
         sheet_archive_dir = archive_dir / sheet_name
         sheet_archive_dir.mkdir(parents=True, exist_ok=True)
@@ -88,6 +113,7 @@ def compose_pending_sheets(config: dict, logger, allow_partial: bool | None = No
         sheet_name = f"sheet_partial_{datetime.now():%Y%m%d_%H%M%S_%f}"
         output_path = sheets_dir / f"{sheet_name}.jpg"
         compose_sheet(batch, output_path, sheet_config)
+        _save_sheet_meta(output_path, batch, columns)
 
         sheet_archive_dir = archive_dir / sheet_name
         sheet_archive_dir.mkdir(parents=True, exist_ok=True)
