@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from math import hypot
 from pathlib import Path
 from statistics import mean
@@ -27,9 +28,12 @@ def clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
 
 class MediaPipeFaceAnalyzer:
     def __init__(self, min_face_confidence: float = 0.5, max_faces: int = 4) -> None:
-        project_root = Path(__file__).resolve().parents[1]
-        detector_model = project_root / "models" / "face_detector.tflite"
-        landmarker_model = project_root / "models" / "face_landmarker.task"
+        if getattr(sys, "frozen", False):
+            models_base = Path(sys._MEIPASS)
+        else:
+            models_base = Path(__file__).resolve().parents[1]
+        detector_model = models_base / "models" / "face_detector.tflite"
+        landmarker_model = models_base / "models" / "face_landmarker.task"
 
         if not detector_model.exists():
             raise FileNotFoundError(f"Не найдена модель детектора лиц: {detector_model}")

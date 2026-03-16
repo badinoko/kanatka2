@@ -58,5 +58,10 @@ Name: "{app}\workdir\logs"
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}\workdir"
+Type: filesandordirs; Name: "{app}\INBOX"
+Type: dirifempty; Name: "{app}"
+
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
