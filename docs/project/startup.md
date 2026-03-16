@@ -1,6 +1,6 @@
 # Startup
 
-Обновлено: 2026-03-16 (post-v3 navbar session)
+Обновлено: 2026-03-16 (v3.0 UX Wave — DONE)
 
 ## Read Order
 
@@ -24,7 +24,7 @@
   - `Макс. разрыв внутри серии`
   - `Ожидание тишины перед разбором`
 - Основной выход — автоматически печатаемые листы.
-- `nearby/rescue` — инструмент исключений, не основной workflow.
+- `nearby/rescue`: функционал «Рядом» удалён (KAN-081). Остаётся только кнопка «Заменить» на странице серии.
 
 ## Canonical Docs
 
@@ -45,8 +45,8 @@
   - pywebview + `series_browser.py`;
   - watcher -> analyzer -> scorer -> selector -> sheet composer;
   - настройки инженера уже есть;
-  - nearby/rescue уже есть;
-  - мониторинг INBOX уже есть.
+  - мониторинг INBOX уже есть;
+  - функционал «Рядом» (nearby) запланирован к удалению (KAN-081).
 - Отгружен финальный installer v2.0:
   - `installers/PhotoSelector_Setup_v2.exe` (пересобран 2026-03-16 со всеми фиксами)
   - в поставке: `INBOX`, `simulate_camera.bat`, `process_folder.bat`, `README.md`.
@@ -59,10 +59,9 @@
 
 ## Immediate Priorities
 
-- **Следующая сессия:** пользователь планирует дать большой план дальнейших действий. Начать с мозгового штурма (скилл `brainstorming`), составить план работ, укрепить `overview.md` новыми задачами, затем приступить к реализации.
-- **KAN-079** (navbar v3): PR #1 создан на ветке `kan-079-navbar-v3-redesign`, визуальные изменения приняты пользователем. Нужен merge.
+- **v3.0 UX Wave (KAN-080..090) — DONE** (реализованы 2026-03-16, 61 тест пройден).
+- **KAN-079** (navbar v3): PR #1 на ветке `kan-079-navbar-v3-redesign`. Нужен merge в main.
 - **KAN-050**: прогнать реальный датасет заказчика, собрать замечания, откалибровать дефолты score и series grouping.
-- Начинается цикл v3.0. Тег v2.0 зафиксирован.
 - KAN-033 (BACKLOG): deployment guide для инженера — позже.
 
 ## Execution Brief For New Chat
@@ -86,15 +85,12 @@
    - `installers/` больше не игнорируется;
    - актуальный артефакт для заказчика: `installers/PhotoSelector_Setup_v2.exe` (собран 2026-03-16);
    - следующий milestone — feedback от заказчика по его тест-пачке и калибровка score.
-3. Выполнять задачи в таком порядке:
-   - KAN-050: полевой validation-run и калибровка score;
-   - KAN-040: проверить disk warning в реальной установке;
-   - KAN-062: проверить ZIP в web-UI, зафиксировать политику хранения оригиналов.
-4. Кодовый фокус первой волны:
-   - `src/scorer.py`
-   - `src/analyzer.py`
-   - `src/selector.py`
-   - затем только нужные части `src/series_browser.py`
+3. v3.0 UX Wave — **ВСЕ ЗАДАЧИ ВЫПОЛНЕНЫ** (KAN-080..090 DONE).
+   Следующий шаг: merge PR #1 (`kan-079-navbar-v3-redesign`) → main.
+4. Кодовый фокус:
+   - `src/series_browser.py` (основной объём UX Wave)
+   - `src/selector.py` (KAN-084)
+   - `src/sheet_composer.py` (KAN-089)
 5. Не тратить время на:
    - `receiver/` (legacy, не часть продукта);
    - тяжёлый live-UI;
@@ -116,7 +112,7 @@
 3. `src/selector.py`
 4. `src/series_browser.py`
 5. `src/config.json`
-6. `workdir/logs/ser001_report.json`
+6. `workdir/logs/s_1_report.json` (после KAN-084) или `ser001_report.json` (до)
 
 ## Build & Verify
 
